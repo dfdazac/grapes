@@ -130,3 +130,9 @@ dmypy.json
 
 # PyCharm files
 .idea/
+
+# Data files
+data/
+
+# w&b files
+wandb/
