@@ -100,11 +100,11 @@ def train(args: Arguments):
 
                     assert len(a1_samples) == args.num_sample
 
+                    ##################################################################################################
+
                     # Get 2-hop neighborhoods of nodes in batch
                     a2_neighborhoods = get_neighboring_nodes(a1_neighbors, adjacency)
                     print('a2_neighborhoods', a2_neighborhoods.shape)
-
-                    ############################
 
                     # Select only rows of feature matrices that we need
                     a2_batch_nodes = torch.unique(a2_neighborhoods)  # Contains a1 nodes and their one-hop neighbors
@@ -127,7 +127,7 @@ def train(args: Arguments):
                     # A1 consists of target nodes and their 1-hop neighbors.
                     # GF GCN returns a probability for each node in A1.
                     a2_nodes_logits = gcn_gf(x.to(device), a2_local_neighborhoods.to(device))
-                    print('logits', a2_nodes_logits.shape)
+                    print('a2_nodes_logits', a2_nodes_logits.shape)
 
                     # Filter out target nodes from logits
                     a2_nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in a2_neighbors])
