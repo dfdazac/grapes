@@ -58,6 +58,8 @@ def train(args: Arguments):
 
                 # Here's where we use GCN-GC to sample
                 for hop in range(args.num_hops):
+                    import time
+                    gfn_start = time.time()
                     # Get neighborhoods of nodes in batch
                     neighborhoods = get_neighboring_nodes(batch_nodes, adjacency)
 
@@ -77,8 +79,12 @@ def train(args: Arguments):
                     probabilities = torch.sigmoid(logits)
 
                     # Sample Ai using the probabilities
-                    ksubset = KSubsetDistribution(probabilities, args.num_sample)
-                    print(ksubset.sample())
+
+                    for i in range(100):
+                        simple_start = time.time()
+                        ksubset = KSubsetDistribution(probabilities, args.num_sample)
+                        a = ksubset.sample()
+                        print(time.time()-simple_start, simple_start - gfn_start)
                     exit()
 
                     # Update batch_nodes

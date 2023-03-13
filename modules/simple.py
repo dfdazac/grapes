@@ -23,12 +23,11 @@ class KSubsetDistribution(torch.distributions.ExponentialFamily):
         a = torch.zeros(self.probs.shape[:-1] + (self.n + 1, self.K + 1), device=self.probs.device)
         a[..., 0, 0] = 1.0
         for i in range(1, self.n + 1):
-            for j in range(self.K+1):
-                dont_take_i = a[..., i-1, j] * (1-self.probs[..., i-1])
-                take_i = 0.
-                if j > 0:
-                    take_i = a[..., i-1, j-1] * self.probs[..., i-1]
-                a[..., i, j] = dont_take_i + take_i
+            a_as_vec = a[..., i-1, :]
+            dont_take_i = a_as_vec * (1-self.probs[..., i-1].unsqueeze(-1))
+            a_j_min_1 = torch.cat([torch.zeros_like(a_as_vec[..., :1]), a_as_vec[..., :-1]], dim=-1)
+            take_i = a_j_min_1 * self.probs[..., i-1].unsqueeze(-1)
+            a[..., i, :] = dont_take_i + take_i
 
         return a
 
