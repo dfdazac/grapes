@@ -9,6 +9,7 @@ import wandb
 import math
 
 from modules.gcn import GCN
+from modules.utils import get_neighboring_nodes
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -54,9 +55,9 @@ def train(args: Arguments):
                     batch_nodes = train_idx[batch_id*batch_size:(batch_id+1)*batch_size]
 
                 # Here's where we use GCN-GC to sample
-                for hop in args.num_hops:
+                for hop in range(args.num_hops):
                     # Get neighborhoods of nodes in batch
-                    neighborhoods = get_neighborhoods(batch_nodes, adjacency)
+                    neighborhoods = get_neighboring_nodes(batch_nodes, adjacency)
 
                     # Pass neighborhoods to GCN-GF
 
