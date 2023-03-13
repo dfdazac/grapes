@@ -10,6 +10,8 @@ import math
 
 from modules.gcn import GCN
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 class Arguments(Tap):
     dataset: str = 'cora'
@@ -25,9 +27,12 @@ def train(args: Arguments):
                notes=args.notes)
 
     data = Planetoid(root='data/Planetoid', name=args.dataset)[0]
+    x = data.x.to(device)
+    edge_index = data.edge_index.to(device)
+    y = data.y.to(device)
     num_classes = len(data.y.unique())
 
-    model = GCN(data.num_features, hidden_dims=[32, num_classes])
+    model = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
     optimizer = Adam(model.parameters(), lr=1e-2)
     loss_fn = nn.CrossEntropyLoss()
 
@@ -53,14 +58,14 @@ def train(args: Arguments):
             loss.backward()
             optimizer.step()
 
-            accuracy = evaluate(logits, data.y, data.val_mask)
+            accuracy = evaluate(logits, y, data.val_mask)
             wandb.log({'valid-accuracy': accuracy})
             wandb.log({'loss': loss.item()})
 
             bar.set_postfix({'loss': loss.item(), 'valid_acc': accuracy},
                             refresh=False)
 
-    test_accuracy = evaluate(logits, data.y, data.test_mask)
+    test_accuracy = evaluate(logits, y, data.test_mask)
     print(f'Test accuracy: {test_accuracy:.1%}')
     wandb.log({'test-accuracy': test_accuracy})
 
@@ -71,7 +76,7 @@ def evaluate(logits: torch.Tensor,
              mask: torch.Tensor
              ) -> float:
     predictions = torch.argmax(logits, dim=1)
-    accuracy = accuracy_score(predictions[mask], targets[mask])
+    accuracy = accuracy_score(predictions[mask].cpu(), targets[mask].cpu())
     return accuracy
 
 
