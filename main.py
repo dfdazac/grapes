@@ -29,12 +29,12 @@ def train(args: Arguments):
                notes=args.notes)
 
     data = Planetoid(root='data/Planetoid', name=args.dataset)[0]
-    x = data.x.to(device)
     edge_index = data.edge_index.to(device)
     y = data.y.to(device)
     num_classes = len(data.y.unique())
 
     model = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
+    gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
     optimizer = Adam(model.parameters(), lr=1e-2)
     loss_fn = nn.CrossEntropyLoss()
 
@@ -60,8 +60,17 @@ def train(args: Arguments):
                     neighborhoods = get_neighboring_nodes(batch_nodes, adjacency)
 
                     # Select only rows of feature matrices that we need
+                    batch_nodes = torch.unique(neighborhoods)
+                    global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
+                    x = data.x[batch_nodes]
+
+                    # Build edge index with local identifiers
+                    local_neighborhoods = torch.zeros_like(neighborhoods)
+                    local_neighborhoods[0] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[0]])
+                    local_neighborhoods[1] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[1]])
 
                     # Pass neighborhoods to GCN-GF
+                    probabilities = gcn_gf(x.to(device), local_neighborhoods.to(device))
 
                     # Get probabilities for sampling each node
 
