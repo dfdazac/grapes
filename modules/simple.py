@@ -1,31 +1,34 @@
 import math
 from typing import Tuple, List
-from torch.distributions import Bernoulli
+from torch.distributions import Bernoulli, constraints
 import torch
 
 
 class KSubsetDistribution(torch.distributions.ExponentialFamily):
+    arg_constraints = {'probs': constraints.unit_interval}
     def __init__(self, probs: torch.Tensor, K: int):
-        # See https://arxiv.org/pdf/2210.01941.pdf Appendix B
-        super().__init__()
-        self._bernoulli = Bernoulli(logits=probs)
-        self.probs = probs
+        # See https://arxiv.org/pdf/2210.01941.pdf, in particular Algorithm 1, 2 and 5 and 6
+        self.probs = probs.squeeze()
+        if len(self.probs.shape) == 1:
+            self.probs = self.probs.unsqueeze(0)
+        self._bernoulli = Bernoulli(logits=self.probs)
         self.K = K
-        self.n = probs.shape[-1]
+        self.n = self.probs.shape[-1]
         self.a = self._a()
-        self.partition = self.a[:, self.n, self.K]
+        self.partition = self.a[..., self.n, self.K]
+        super().__init__()
 
     def _a(self):
         # Algorithm 1 from paper
-        a = torch.zeros((self.probs.shape[0], self.n + 1, self.K + 1), device=self.probs.device)
-        a[:, 0, 0] = 1.0
+        a = torch.zeros(self.probs.shape[:-1] + (self.n + 1, self.K + 1), device=self.probs.device)
+        a[..., 0, 0] = 1.0
         for i in range(1, self.n + 1):
             for j in range(self.K+1):
-                dont_take_i = a[:, i-1, j] * (1-self.probs[:, i-1])
+                dont_take_i = a[..., i-1, j] * (1-self.probs[..., i-1])
                 take_i = 0.
                 if j > 0:
-                    take_i = a[:, i-1, j-1] * self.probs[:, i-1]
-                a[:, i, j] = dont_take_i + take_i
+                    take_i = a[..., i-1, j-1] * self.probs[..., i-1]
+                a[..., i, j] = dont_take_i + take_i
 
         return a
 
@@ -37,8 +40,8 @@ class KSubsetDistribution(torch.distributions.ExponentialFamily):
         if l == u:
             assert k == 1 or k == 0
             if k == 1:
-                return self.probs[:, l]
-            return 1 - self.probs[:, l]
+                return self.probs[..., l]
+            return 1 - self.probs[..., l]
         if (l, u) in self._cache:
             return self._cache[(l, u)]
         pm = []
@@ -56,6 +59,7 @@ class KSubsetDistribution(torch.distributions.ExponentialFamily):
         return unnormalized_log_prob - self.partition.log()
 
     def sample(self, sample_shape=torch.Size()):
+        # TODO: This won't work for general-shaped probs...
         b = self.probs.shape[0]
         with torch.no_grad():
             samples = []
@@ -63,14 +67,14 @@ class KSubsetDistribution(torch.distributions.ExponentialFamily):
             iterator = torch.arange(b, device=self.probs.device)
             for i in range(self.n, 0, -1):
                 # TODO: This indexing with j probably doesn't work.
-                p = self.a[:, i-1][iterator, j-1]
+                p = self.a[..., i-1, :][iterator, j-1]
                 p[j-1 < 0] = 0.
-                bern_prob = p * self.probs[:, i - 1] / self.a[:, i][iterator, j]
+                bern_prob = p * self.probs[..., i - 1] / self.a[..., i, :][iterator, j]
                 zi = torch.bernoulli(bern_prob)
                 j = torch.where(zi == 1, j - 1, j)
                 samples.append(zi)
             samples = torch.stack(samples, dim=-1)
-            return samples
+            return samples.squeeze()
             # return self._sample(shape, 0, self.probs.shape[-1], self.K)
 
     def _sample(self, sample_shape, l: int, u: int, k: int):
