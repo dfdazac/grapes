@@ -59,6 +59,8 @@ def train(args: Arguments):
                     # Get neighborhoods of nodes in batch
                     neighborhoods = get_neighboring_nodes(batch_nodes, adjacency)
 
+                    # Select only rows of feature matrices that we need
+
                     # Pass neighborhoods to GCN-GF
 
                     # Get probabilities for sampling each node

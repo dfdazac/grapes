@@ -51,15 +51,11 @@ def get_neighboring_nodes(nodes, adjecency_matrix):
     assert type(adjecency_matrix) == torch.Tensor  # adjecency_matrix should be a tensor
 
     isin = torch.isin(adjecency_matrix._indices()[0], nodes)
-    edge_index = adjecency_matrix._indices()[torch.where(isin)[0]]
-
-
-    # Get the neighboring nodes for each node in `nodes`
-    # x = [adjecency_matrix[node, :].nonzero().squeeze() for node in nodes]
+    edge_index = adjecency_matrix._indices()[:, torch.where(isin)[0]]
 
     # Convert the list of neighboring nodes to a tensor
     return edge_index
 
 
-x = get_neighboring_nodes(torch.tensor([0, 1, 2]), torch.tensor([[0, 1, 1], [1, 0, 1], [1, 1, 0]]))
-print(x)
+# x = get_neighboring_nodes(torch.tensor([0, 1, 2]), torch.tensor([[0, 1, 1], [1, 0, 1], [1, 1, 0]]))
+# print(x)
