@@ -55,6 +55,9 @@ def get_neighboring_nodes(nodes, adjecency_matrix):
     isin = isin_row | isin_col
     edge_index = adjecency_matrix._indices()[:, torch.where(isin)[0]]
 
+    print('nodes', nodes)
+    print('edge_index', edge_index)
+
     # Convert the list of neighboring nodes to a tensor
     return edge_index
 

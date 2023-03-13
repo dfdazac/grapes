@@ -53,33 +53,97 @@ def train(args: Arguments):
         for epoch in loop:
             for batch_id in range(train_num_batches):
                 if batch_id == train_num_batches-1:
-                    batch_nodes = train_idx[batch_id * batch_size:]
+                    target_nodes = train_idx[batch_id * batch_size:]
                 else:
-                    batch_nodes = train_idx[batch_id*batch_size:(batch_id+1)*batch_size]
+                    target_nodes = train_idx[batch_id*batch_size:(batch_id+1)*batch_size]
 
                 # Here's where we use GCN-GF to sample
                 for hop in range(args.num_hops):
-                    # Get neighborhoods of nodes in batch
-                    neighborhoods = get_neighboring_nodes(batch_nodes, adjacency)
+
+                    print('target_nodes', target_nodes.shape)
+                    # A1 - Get 1-hop neighborhoods of nodes in batch
+                    a1_neighborhoods = get_neighboring_nodes(target_nodes, adjacency)
+                    print('neighborhoods', a1_neighborhoods.shape)
 
                     # Select only rows of feature matrices that we need
-                    batch_nodes = torch.unique(neighborhoods)
-                    global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
-                    x = data.x[batch_nodes]
+                    a1_batch_nodes = torch.unique(a1_neighborhoods)  # Contains target nodes and their one-hop neighbors
+                    print('a1_batch_nodes', a1_batch_nodes)
+
+                    a1_neighbors = a1_batch_nodes[~a1_batch_nodes.unsqueeze(1).eq(target_nodes.t()).any(1)]
+                    print('one_hop_neighbors', a1_neighbors)
+
+                    global_to_local_idx = {i.item(): j for j, i in enumerate(a1_batch_nodes)}
+                    local_to_global_idx = {v: k for k, v in global_to_local_idx.items()}
+                    x = data.x[a1_batch_nodes]
 
                     # Build edge index with local identifiers
-                    local_neighborhoods = torch.zeros_like(neighborhoods)
-                    local_neighborhoods[0] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[0]])
-                    local_neighborhoods[1] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[1]])
+                    a1_local_neighborhoods = torch.zeros_like(a1_neighborhoods)
+                    a1_local_neighborhoods[0] = torch.tensor([global_to_local_idx[i.item()] for i in a1_neighborhoods[0]])
+                    a1_local_neighborhoods[1] = torch.tensor([global_to_local_idx[i.item()] for i in a1_neighborhoods[1]])
 
-                    # Pass neighborhoods to GCN-GF
-                    logits = gcn_gf(x.to(device), local_neighborhoods.to(device))
+                    # A1 consists of target nodes and their 1-hop neighbors.
+                    # GF GCN returns a probability for each node in A1.
+                    a1_nodes_logits = gcn_gf(x.to(device), a1_local_neighborhoods.to(device))
+                    print('logits', a1_nodes_logits.shape)
+
+                    # Filter out target nodes from logits
+                    a1_nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in a1_neighbors])
+                    a1_nodes_logits = a1_nodes_logits[a1_nodes_idx]
+
                     # Get probabilities for sampling each node
-                    probabilities = torch.sigmoid(logits)
+                    a1_nodes_probs = torch.sigmoid(a1_nodes_logits)
 
-                    # Sample Ai using the probabilities
-                    ksubset = KSubsetDistribution(probabilities, args.num_sample)
-                    print(ksubset.sample())
+                    # Sample k-nodes using the probabilities from GF GCN
+                    a1_k_subset = KSubsetDistribution(a1_nodes_probs, args.num_sample)
+                    a1_samples = a1_k_subset.sample().long()
+                    a1_samples = a1_neighbors[a1_samples == 1]
+
+                    assert len(a1_samples) == args.num_sample
+
+                    # Get 2-hop neighborhoods of nodes in batch
+                    a2_neighborhoods = get_neighboring_nodes(a1_neighbors, adjacency)
+                    print('a2_neighborhoods', a2_neighborhoods.shape)
+
+                    ############################
+
+                    # Select only rows of feature matrices that we need
+                    a2_batch_nodes = torch.unique(a2_neighborhoods)  # Contains a1 nodes and their one-hop neighbors
+                    print('a2_batch_nodes', a2_batch_nodes)
+
+                    a2_neighbors = a2_batch_nodes[~a2_batch_nodes.unsqueeze(1).eq(a1_batch_nodes.t()).any(1)]
+                    print('two_hop_neighbors', a2_neighbors)
+
+                    global_to_local_idx = {i.item(): j for j, i in enumerate(a2_batch_nodes)}
+                    local_to_global_idx = {v: k for k, v in global_to_local_idx.items()}
+                    x = data.x[a2_batch_nodes]
+
+                    # Build edge index with local identifiers
+                    a2_local_neighborhoods = torch.zeros_like(a2_neighborhoods)
+                    a2_local_neighborhoods[0] = torch.tensor(
+                        [global_to_local_idx[i.item()] for i in a2_neighborhoods[0]])
+                    a2_local_neighborhoods[1] = torch.tensor(
+                        [global_to_local_idx[i.item()] for i in a2_neighborhoods[1]])
+
+                    # A1 consists of target nodes and their 1-hop neighbors.
+                    # GF GCN returns a probability for each node in A1.
+                    a2_nodes_logits = gcn_gf(x.to(device), a2_local_neighborhoods.to(device))
+                    print('logits', a2_nodes_logits.shape)
+
+                    # Filter out target nodes from logits
+                    a2_nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in a2_neighbors])
+                    a2_nodes_logits = a2_nodes_logits[a2_nodes_idx]
+
+                    # Get probabilities for sampling each node
+                    a2_nodes_probs = torch.sigmoid(a2_nodes_logits)
+
+                    # Sample k-nodes using the probabilities from GF GCN
+                    a2_k_subset = KSubsetDistribution(a2_nodes_probs, args.num_sample)
+                    a2_samples = a2_k_subset.sample().long()
+                    a2_samples = a2_neighbors[a2_samples == 1]
+
+                    assert len(a2_samples) == args.num_sample
+
+                    print(a2_samples)
                     exit()
 
                     # Update batch_nodes

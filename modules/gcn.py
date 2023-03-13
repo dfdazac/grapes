@@ -25,5 +25,4 @@ class GCN(nn.Module):
         for layer in self.gcn_layers[:-1]:
             x = torch.relu(layer(x, edge_index))
         logits = self.gcn_layers[-1](x, edge_index)
-
         return logits
