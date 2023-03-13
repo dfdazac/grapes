@@ -1,8 +1,7 @@
 import math
 from typing import Tuple, List
-
-import torch
 from torch.distributions import Bernoulli
+import torch
 
 
 class KSubsetDistribution(torch.distributions.ExponentialFamily):
@@ -102,5 +101,3 @@ if __name__ == "__main__":
     samplez = ksubset.sample()
     assert (samplez.sum(-1) == k).all()
     print(ksubset.log_prob(samplez).exp())
-
-

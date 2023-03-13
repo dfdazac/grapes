@@ -7,6 +7,7 @@ from torch_geometric.datasets import Planetoid
 from tqdm import tqdm
 import wandb
 import math
+from modules.simple import KSubsetDistribution
 
 from modules.gcn import GCN
 from modules.utils import get_neighboring_nodes
@@ -20,6 +21,7 @@ class Arguments(Tap):
     notes: str = None
     log_wandb: bool = False
     batch_size: int = 16
+    num_sample: int = 20
 
 
 def train(args: Arguments):
@@ -74,9 +76,10 @@ def train(args: Arguments):
                     # Get probabilities for sampling each node
                     probabilities = torch.sigmoid(logits)
 
-                    # Get probabilities for sampling each node
-
                     # Sample Ai using the probabilities
+                    ksubset = KSubsetDistribution(probabilities, args.num_sample)
+                    print(ksubset.sample())
+                    exit()
 
                     # Update batch_nodes
 
