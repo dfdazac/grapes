@@ -70,7 +70,9 @@ def train(args: Arguments):
                     local_neighborhoods[1] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[1]])
 
                     # Pass neighborhoods to GCN-GF
-                    probabilities = gcn_gf(x.to(device), local_neighborhoods.to(device))
+                    logits = gcn_gf(x.to(device), local_neighborhoods.to(device))
+                    # Get probabilities for sampling each node
+                    probabilities = torch.sigmoid(logits)
 
                     # Get probabilities for sampling each node
 
