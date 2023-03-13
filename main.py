@@ -31,13 +31,14 @@ def train(args: Arguments):
                notes=args.notes)
 
     data = Planetoid(root='data/Planetoid', name=args.dataset)[0]
-    edge_index = data.edge_index.to(device)
+    # edge_index = data.edge_index.to(device)
     y = data.y.to(device)
     num_classes = len(data.y.unique())
 
-    model = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
+    gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
     gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
-    optimizer = Adam(model.parameters(), lr=1e-2)
+    optimizer_c = Adam(gcn_c.parameters(), lr=1e-2)
+    optimizer_gf = Adam(gcn_gf.parameters(), lr=1e-2)
     loss_fn = nn.CrossEntropyLoss()
 
     train_idx = data.train_mask.nonzero()
@@ -56,7 +57,7 @@ def train(args: Arguments):
                 else:
                     batch_nodes = train_idx[batch_id*batch_size:(batch_id+1)*batch_size]
 
-                # Here's where we use GCN-GC to sample
+                # Here's where we use GCN-GF to sample
                 for hop in range(args.num_hops):
                     # Get neighborhoods of nodes in batch
                     neighborhoods = get_neighboring_nodes(batch_nodes, adjacency)
@@ -83,21 +84,24 @@ def train(args: Arguments):
 
                     # Update batch_nodes
 
+                    optimizer_gf.zero_grad()
+                    loss.backward()
+                    optimizer_gf.step()
+
                 # Pass A1, A2, ... to GCN-C
 
-                logits = model(data.x, data.edge_index)
+                logits = gcn_c(data.x, data.edge_index)
                 loss = loss_fn(logits[data.train_mask], data.y[data.train_mask])
 
-                optimizer.zero_grad()
+                optimizer_c.zero_grad()
                 loss.backward()
-                optimizer.step()
+                optimizer_c.step()
 
                 accuracy = evaluate(logits, y, data.val_mask)
                 wandb.log({'valid-accuracy': accuracy})
                 wandb.log({'loss': loss.item()})
 
-                loop.set_postfix({'loss': loss.item(), 'valid_acc': accuracy},
-                                refresh=False)
+                loop.set_postfix({'loss': loss.item(), 'valid_acc': accuracy}, refresh=False)
 
     test_accuracy = evaluate(logits, y, data.test_mask)
     print(f'Test accuracy: {test_accuracy:.1%}')
