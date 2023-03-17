@@ -60,7 +60,7 @@ class KSubsetDistribution(torch.distributions.ExponentialFamily):
 
     def log_prob(self, value: torch.Tensor) -> torch.Tensor:
         unnormalized_log_prob = self._bernoulli.log_prob(value).sum(-1)
-        return unnormalized_log_prob - self.partition.log()
+        return unnormalized_log_prob - self.log_partition
 
     def sample(self, sample_shape=torch.Size()):
         # TODO: This won't work for general-shaped probs...

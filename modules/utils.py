@@ -23,7 +23,7 @@ def sample_neighborhoods_from_probs(probabilities: torch.Tensor,
         node_samples = node_k_subset.sample()
         neighbor_nodes = neighbor_nodes[node_samples.long() == 1]
 
-        print(neighbor_nodes)
+        # print(neighbor_nodes)
 
         # Check that we have the right number of samples
         assert len(neighbor_nodes) == num_samples
