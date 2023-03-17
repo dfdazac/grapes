@@ -16,7 +16,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class Arguments(Tap):
-    dataset: str = 'cora'
+    dataset: str = 'citeseer'
     num_hops: int = 2
     notes: str = None
     log_wandb: bool = True
