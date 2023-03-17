@@ -140,7 +140,7 @@ def train(args: Arguments):
                 loss_gfn.backward()
                 optimizer_gf.step()
 
-                print("Classification loss", loss_c, "GFN loss", loss_gfn)
+                # print("Classification loss", loss_c, "GFN loss", loss_gfn)
                 accuracy = evaluate(gcn_c, data, y, data.val_mask)
                 wandb.log({
                     'epoch': epoch,
