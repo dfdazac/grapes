@@ -150,7 +150,7 @@ def train(args: Arguments):
                 })
 
                 # What does this line do?
-                loop.set_postfix({'loss': loss_c.item(), 'valid_acc': accuracy, "gfn_loss": loss_gfn.item()}, refresh=False)
+                loop.set_postfix({'loss': loss_c.item(), 'valid_acc': accuracy, "gfn_loss": loss_gfn.item()}, refresh=True)
 
     test_accuracy = evaluate(gcn_c, data, y, data.test_mask)
     print(f'Test accuracy: {test_accuracy:.1%}')
