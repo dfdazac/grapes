@@ -15,7 +15,7 @@ class KSubsetDistribution(torch.distributions.ExponentialFamily):
         self.probs = probs.squeeze()
         if len(self.probs.shape) == 1:
             self.probs = self.probs.unsqueeze(0)
-        self._bernoulli = Bernoulli(logits=self.probs)
+        self._bernoulli = Bernoulli(probs=self.probs)
         self.K = K
         self.n = self.probs.shape[-1]
         self.log_space = log_space
