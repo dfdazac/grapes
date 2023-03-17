@@ -69,7 +69,7 @@ def train(args: Arguments):
 
                     # Select only rows of feature matrices that we need
                     batch_nodes = torch.unique(neighborhoods)  # Contains target nodes and their one-hop neighbors
-                    neighbor_nodes = batch_nodes[~batch_nodes.unsqueeze(1).eq(previous_nodes.t()).any(1)]
+                    neighbor_nodes = batch_nodes[~torch.isin(batch_nodes, previous_nodes)]
 
                     global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
                     x = data.x[batch_nodes]
