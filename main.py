@@ -58,18 +58,18 @@ def train(args: Arguments):
                 else:
                     target_nodes = train_idx[batch_id * batch_size:(batch_id + 1) * batch_size]
 
-                batch_target_nodes = target_nodes.clone()
+                previous_nodes = target_nodes.clone()
 
                 # Here's where we use GCN-GF to sample
                 global_edge_indices = []
                 log_probs = []
                 for hop in range(args.num_hops):
                     # Get neighborhoods of target nodes in batch
-                    neighborhoods = get_neighboring_nodes(target_nodes, adjacency)
+                    neighborhoods = get_neighboring_nodes(previous_nodes, adjacency)
 
                     # Select only rows of feature matrices that we need
                     batch_nodes = torch.unique(neighborhoods)  # Contains target nodes and their one-hop neighbors
-                    neighbor_nodes = batch_nodes[~batch_nodes.unsqueeze(1).eq(target_nodes.t()).any(1)]
+                    neighbor_nodes = batch_nodes[~batch_nodes.unsqueeze(1).eq(previous_nodes.t()).any(1)]
 
                     global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
                     x = data.x[batch_nodes]
@@ -100,7 +100,14 @@ def train(args: Arguments):
                     batch_nodes = torch.unique(sampled_neighboring_nodes)
 
                     # TODO Keep track of edges
-                    global_edge_indices.append(sampled_neighboring_nodes)
+                    row_isin = torch.isin(data.edge_index[0], previous_nodes)
+                    col_isin = torch.isin(data.edge_index[1], batch_nodes)
+                    isin = torch.logical_and(row_isin, col_isin)
+                    edge_index_hop = edge_index[:, torch.where(isin)[0]]
+                    global_edge_indices.append(edge_index_hop)
+
+                    # Update the previous_nodes
+                    previous_nodes = batch_nodes.clone()
 
                 # Pass A1, A2, ... (edge_index1, edge_index2, ...) to GCN-C
 
@@ -116,9 +123,9 @@ def train(args: Arguments):
 
                 logits = gcn_c(data.x[batch_nodes].to(device),
                                local_edge_indices)
-                local_target_ids = torch.tensor([global_to_local_idx[i.item()] for i in batch_target_nodes])
+                local_target_ids = torch.tensor([global_to_local_idx[i.item()] for i in target_nodes])
                 loss_c = loss_fn(logits[local_target_ids],
-                               data.y[batch_target_nodes].squeeze().to(device))
+                               data.y[target_nodes].squeeze().to(device))
 
                 optimizer_c.zero_grad()
                 loss_c.backward()
