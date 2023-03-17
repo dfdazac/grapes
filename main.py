@@ -22,7 +22,7 @@ class Arguments(Tap):
     notes: str = None
     log_wandb: bool = False
     batch_size: int = 16
-    num_samples: int = 20  # TODO Change this
+    num_samples: int = 100  # TODO Change this
 
 
 def train(args: Arguments):
@@ -32,7 +32,6 @@ def train(args: Arguments):
                notes=args.notes)
 
     data = Planetoid(root='data/Planetoid', name=args.dataset)[0]
-    edge_index = data.edge_index.to(device)
     y = data.y.to(device)
     num_classes = len(data.y.unique())
 
