@@ -14,6 +14,7 @@ from modules.utils import get_neighboring_nodes, sample_neighborhoods_from_probs
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+# torch.autograd.set_detect_anomaly(True)
 
 class Arguments(Tap):
     dataset: str = 'cora'
@@ -141,6 +142,7 @@ def train(args: Arguments):
                 loss_gfn.backward()
                 optimizer_gf.step()
 
+                print("Classification loss", loss_c, "GFN loss", loss_gfn)
                 accuracy = evaluate(gcn_c, data, y, data.val_mask)
                 wandb.log({'valid-accuracy': accuracy})
                 wandb.log({'loss': loss_c.item()})
