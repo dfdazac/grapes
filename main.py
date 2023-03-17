@@ -7,10 +7,10 @@ from torch_geometric.datasets import Planetoid
 from tqdm import tqdm
 import wandb
 import math
-from modules.simple import KSubsetDistribution
+
 
 from modules.gcn import GCN
-from modules.utils import get_neighboring_nodes
+from modules.utils import get_neighboring_nodes, sample_neighborhoods_from_probs
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -21,7 +21,7 @@ class Arguments(Tap):
     notes: str = None
     log_wandb: bool = False
     batch_size: int = 16
-    num_sample: int = 20
+    num_samples: int = 20  # TODO Change this
 
 
 def train(args: Arguments):
@@ -31,7 +31,7 @@ def train(args: Arguments):
                notes=args.notes)
 
     data = Planetoid(root='data/Planetoid', name=args.dataset)[0]
-    # edge_index = data.edge_index.to(device)
+    edge_index = data.edge_index.to(device)
     y = data.y.to(device)
     num_classes = len(data.y.unique())
 
@@ -42,7 +42,7 @@ def train(args: Arguments):
     loss_fn = nn.CrossEntropyLoss()
 
     train_idx = data.train_mask.nonzero()
-    train_num_batches = max(math.ceil(len(train_idx)/args.batch_size), 1)
+    train_num_batches = max(math.ceil(len(train_idx) / args.batch_size), 1)
     batch_size = min(args.batch_size, len(data.train_mask))
     adjacency = torch.sparse_coo_tensor(indices=data.edge_index,
                                         values=torch.ones(data.edge_index.shape[-1]),
@@ -52,132 +52,96 @@ def train(args: Arguments):
     with tqdm(range(max_epochs)) as loop:
         for epoch in loop:
             for batch_id in range(train_num_batches):
-                if batch_id == train_num_batches-1:
+                if batch_id == train_num_batches - 1:
                     target_nodes = train_idx[batch_id * batch_size:]
                 else:
-                    target_nodes = train_idx[batch_id*batch_size:(batch_id+1)*batch_size]
+                    target_nodes = train_idx[batch_id * batch_size:(batch_id + 1) * batch_size]
+
+                batch_target_nodes = target_nodes.clone()
 
                 # Here's where we use GCN-GF to sample
+                global_edge_indices = []
                 for hop in range(args.num_hops):
-
-                    print('target_nodes', target_nodes.shape)
-                    # A1 - Get 1-hop neighborhoods of nodes in batch
-                    a1_neighborhoods = get_neighboring_nodes(target_nodes, adjacency)
-                    print('neighborhoods', a1_neighborhoods.shape)
+                    # Get neighborhoods of target nodes in batch
+                    neighborhoods = get_neighboring_nodes(target_nodes, adjacency)
 
                     # Select only rows of feature matrices that we need
-                    a1_batch_nodes = torch.unique(a1_neighborhoods)  # Contains target nodes and their one-hop neighbors
-                    print('a1_batch_nodes', a1_batch_nodes)
+                    batch_nodes = torch.unique(neighborhoods)  # Contains target nodes and their one-hop neighbors
+                    neighbor_nodes = batch_nodes[~batch_nodes.unsqueeze(1).eq(target_nodes.t()).any(1)]
 
-                    a1_neighbors = a1_batch_nodes[~a1_batch_nodes.unsqueeze(1).eq(target_nodes.t()).any(1)]
-                    print('one_hop_neighbors', a1_neighbors)
-
-                    global_to_local_idx = {i.item(): j for j, i in enumerate(a1_batch_nodes)}
-                    local_to_global_idx = {v: k for k, v in global_to_local_idx.items()}
-                    x = data.x[a1_batch_nodes]
+                    global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
+                    x = data.x[batch_nodes]
 
                     # Build edge index with local identifiers
-                    a1_local_neighborhoods = torch.zeros_like(a1_neighborhoods)
-                    a1_local_neighborhoods[0] = torch.tensor([global_to_local_idx[i.item()] for i in a1_neighborhoods[0]])
-                    a1_local_neighborhoods[1] = torch.tensor([global_to_local_idx[i.item()] for i in a1_neighborhoods[1]])
+                    local_neighborhoods = torch.zeros_like(neighborhoods)
+                    local_neighborhoods[0] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[0]])
+                    local_neighborhoods[1] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[1]])
 
-                    # A1 consists of target nodes and their 1-hop neighbors.
-                    # GF GCN returns a probability for each node in A1.
-                    a1_nodes_logits = gcn_gf(x.to(device), a1_local_neighborhoods.to(device))
-                    print('logits', a1_nodes_logits.shape)
+                    # Pass neighborhoods to GCN-GF and get probabilities for sampling each node
+                    node_logits = gcn_gf(x.to(device), local_neighborhoods.to(device))
+                    node_probs = torch.sigmoid(node_logits)
 
-                    # Filter out target nodes from logits
-                    a1_nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in a1_neighbors])
-                    a1_nodes_logits = a1_nodes_logits[a1_nodes_idx]
+                    # Filter out probabilities of target nodes
+                    nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in neighbor_nodes])
+                    node_probs = node_probs[nodes_idx]
 
-                    # Get probabilities for sampling each node
-                    a1_nodes_probs = torch.sigmoid(a1_nodes_logits)
+                    # Sample Ai using the probabilities
+                    sampled_neighboring_nodes = sample_neighborhoods_from_probs(
+                        node_probs,
+                        neighbor_nodes,
+                        args.num_samples
+                    )
 
-                    # Sample k-nodes using the probabilities from GF GCN
-                    a1_k_subset = KSubsetDistribution(a1_nodes_probs, args.num_sample)
-                    a1_samples = a1_k_subset.sample().long()
-                    a1_samples = a1_neighbors[a1_samples == 1]
+                    # Update batch nodes
+                    batch_nodes = torch.unique(sampled_neighboring_nodes)
 
-                    assert len(a1_samples) == args.num_sample
+                    # TODO Keep track of edges
+                    global_edge_indices.append(sampled_neighboring_nodes)
 
-                    ##################################################################################################
+                # Pass A1, A2, ... (edge_index1, edge_index2, ...) to GCN-C
 
-                    # Get 2-hop neighborhoods of nodes in batch
-                    a2_neighborhoods = get_neighboring_nodes(a1_neighbors, adjacency)
-                    print('a2_neighborhoods', a2_neighborhoods.shape)
+                # Converting global indices to the local of final batch_nodes.
+                # The final batch_nodes are the nodes sampled from the second hop concatenated with the target nodes
+                global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
+                local_edge_indices = []
+                for edge_index in global_edge_indices:
+                    local_index = torch.zeros_like(edge_index, device=device)
+                    local_index[0] = torch.tensor([global_to_local_idx[i.item()] for i in edge_index[0]])
+                    local_index[1] = torch.tensor([global_to_local_idx[i.item()] for i in edge_index[1]])
+                    local_edge_indices.append(local_index)
 
-                    # Select only rows of feature matrices that we need
-                    a2_batch_nodes = torch.unique(a2_neighborhoods)  # Contains a1 nodes and their one-hop neighbors
-                    print('a2_batch_nodes', a2_batch_nodes)
-
-                    a2_neighbors = a2_batch_nodes[~a2_batch_nodes.unsqueeze(1).eq(a1_batch_nodes.t()).any(1)]
-                    print('two_hop_neighbors', a2_neighbors)
-
-                    global_to_local_idx = {i.item(): j for j, i in enumerate(a2_batch_nodes)}
-                    local_to_global_idx = {v: k for k, v in global_to_local_idx.items()}
-                    x = data.x[a2_batch_nodes]
-
-                    # Build edge index with local identifiers
-                    a2_local_neighborhoods = torch.zeros_like(a2_neighborhoods)
-                    a2_local_neighborhoods[0] = torch.tensor(
-                        [global_to_local_idx[i.item()] for i in a2_neighborhoods[0]])
-                    a2_local_neighborhoods[1] = torch.tensor(
-                        [global_to_local_idx[i.item()] for i in a2_neighborhoods[1]])
-
-                    # A1 consists of target nodes and their 1-hop neighbors.
-                    # GF GCN returns a probability for each node in A1.
-                    a2_nodes_logits = gcn_gf(x.to(device), a2_local_neighborhoods.to(device))
-                    print('a2_nodes_logits', a2_nodes_logits.shape)
-
-                    # Filter out target nodes from logits
-                    a2_nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in a2_neighbors])
-                    a2_nodes_logits = a2_nodes_logits[a2_nodes_idx]
-
-                    # Get probabilities for sampling each node
-                    a2_nodes_probs = torch.sigmoid(a2_nodes_logits)
-
-                    # Sample k-nodes using the probabilities from GF GCN
-                    a2_k_subset = KSubsetDistribution(a2_nodes_probs, args.num_sample)
-                    a2_samples = a2_k_subset.sample().long()
-                    a2_samples = a2_neighbors[a2_samples == 1]
-
-                    assert len(a2_samples) == args.num_sample
-
-                    print(a2_samples)
-                    exit()
-
-                    # Update batch_nodes
-
-                    optimizer_gf.zero_grad()
-                    loss.backward()
-                    optimizer_gf.step()
-
-                # Pass A1, A2, ... to GCN-C
-
-                logits = gcn_c(data.x, data.edge_index)
-                loss = loss_fn(logits[data.train_mask], data.y[data.train_mask])
+                logits = gcn_c(data.x[batch_nodes].to(device),
+                               local_edge_indices)
+                local_target_ids = torch.tensor([global_to_local_idx[i.item()] for i in batch_target_nodes])
+                loss = loss_fn(logits[local_target_ids],
+                               data.y[batch_target_nodes].squeeze().to(device))
 
                 optimizer_c.zero_grad()
                 loss.backward()
                 optimizer_c.step()
 
-                accuracy = evaluate(logits, y, data.val_mask)
+                accuracy = evaluate(gcn_c, data, y, data.val_mask)
                 wandb.log({'valid-accuracy': accuracy})
                 wandb.log({'loss': loss.item()})
 
-                loop.set_postfix({'loss': loss.item(), 'valid_acc': accuracy}, refresh=False)
+                loop.set_postfix({'loss': loss.item(), 'valid_acc': accuracy},
+                                 refresh=False)
 
-    test_accuracy = evaluate(logits, y, data.test_mask)
+    test_accuracy = evaluate(gcn_c, data, y, data.test_mask)
     print(f'Test accuracy: {test_accuracy:.1%}')
     wandb.log({'test-accuracy': test_accuracy})
 
 
 @torch.inference_mode()
-def evaluate(logits: torch.Tensor,
+def evaluate(model,
+             data,
              targets: torch.Tensor,
              mask: torch.Tensor
              ) -> float:
-    predictions = torch.argmax(logits, dim=1)
+    # perform full batch message passing for evaluation
+    logits_total = model(data.x.to(device), data.edge_index)
+
+    predictions = torch.argmax(logits_total, dim=1)
     accuracy = accuracy_score(predictions[mask].cpu(), targets[mask].cpu())
     return accuracy
 

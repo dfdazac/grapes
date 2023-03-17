@@ -1,7 +1,33 @@
 import time
 import os
-
 import torch
+from .simple import KSubsetDistribution
+
+
+def sample_neighborhoods_from_probs(probabilities: torch.Tensor,
+                                    neighbor_nodes: torch.Tensor,
+                                    num_samples: int = -1
+                                    ) -> torch.Tensor:
+    """Remove edges from an edge index, by removing nodes according to some
+    probability.
+    Args:
+        probabilities: tensor of shape (N,), where N all the number of unique
+            nodes in a batch, containing the probability of dropping the node.
+        neighbor_nodes: tensor containing global node identifiers of the neighbors nodes
+        num_samples: the number of samples to keep. If None, all edges are kept.
+    """
+    if num_samples > 0:
+        node_k_subset = KSubsetDistribution(probabilities, num_samples)
+        node_samples = node_k_subset.sample().long()
+        neighbor_nodes = neighbor_nodes[node_samples == 1]
+
+        print(neighbor_nodes)
+
+        # Check that we have the right number of samples
+        assert len(neighbor_nodes) == num_samples
+        return neighbor_nodes
+    else:
+        return neighbor_nodes
 
 
 def d(tensor=None):
@@ -54,9 +80,6 @@ def get_neighboring_nodes(nodes, adjecency_matrix):
     isin_col = torch.isin(adjecency_matrix._indices()[1], nodes)
     isin = isin_row | isin_col
     edge_index = adjecency_matrix._indices()[:, torch.where(isin)[0]]
-
-    print('nodes', nodes)
-    print('edge_index', edge_index)
 
     # Convert the list of neighboring nodes to a tensor
     return edge_index
