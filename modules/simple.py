@@ -12,6 +12,7 @@ class KSubsetDistribution(torch.distributions.ExponentialFamily):
     arg_constraints = {'probs': constraints.unit_interval}
     def __init__(self, probs: torch.Tensor, K: int, log_space=True):
         # See https://arxiv.org/pdf/2210.01941.pdf, in particular Algorithm 1, 2 and 5 and 6
+        assert K < probs.shape[-1]
         self.probs = probs.squeeze()
         if len(self.probs.shape) == 1:
             self.probs = self.probs.unsqueeze(0)

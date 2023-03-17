@@ -39,7 +39,7 @@ def train(args: Arguments):
     gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
     log_z = torch.tensor(80., requires_grad=True).to(device)
     optimizer_c = Adam(gcn_c.parameters(), lr=1e-2)
-    optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=1e-4)
+    optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=1e-3)
     loss_fn = nn.CrossEntropyLoss()
 
     train_idx = data.train_mask.nonzero()
@@ -149,7 +149,7 @@ def train(args: Arguments):
                 })
 
                 # What does this line do?
-                loop.set_postfix({'loss': loss_c.item(), 'valid_acc': accuracy}, refresh=False)
+                loop.set_postfix({'loss': loss_c.item(), 'valid_acc': accuracy, "gfn_loss": loss_gfn.item()}, refresh=True)
 
     test_accuracy = evaluate(gcn_c, data, y, data.test_mask)
     print(f'Test accuracy: {test_accuracy:.1%}')
