@@ -20,14 +20,14 @@ def sample_neighborhoods_from_probs(probabilities: torch.Tensor,
     """
     if num_samples > 0:
         node_k_subset = KSubsetDistribution(probabilities, num_samples)
-        node_samples = node_k_subset.sample().long()
-        neighbor_nodes = neighbor_nodes[node_samples == 1]
+        node_samples = node_k_subset.sample()
+        neighbor_nodes = neighbor_nodes[node_samples.long() == 1]
 
         print(neighbor_nodes)
 
         # Check that we have the right number of samples
         assert len(neighbor_nodes) == num_samples
-        return neighbor_nodes, node_k_subset.log_prob(neighbor_nodes)
+        return neighbor_nodes, node_k_subset.log_prob(node_samples)
     else:
         return neighbor_nodes, None
 
