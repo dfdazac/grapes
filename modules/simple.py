@@ -44,13 +44,10 @@ class KSubsetDistribution(torch.distributions.ExponentialFamily):
             a_as_vec = a[..., i-1, 1:]
             a_j_min_1 = a[..., i-1, :-1]
             if self.log_space:
-                dont_take_i = torch.where(torch.isinf(a_as_vec),
-                                          a_as_vec,
-                                          a_as_vec + log1mexp(-log_probs[..., i-1].unsqueeze(-1)))
-                take_i = torch.where(torch.isinf(a_j_min_1),
-                                          a_j_min_1,
-                                          a_j_min_1 + log_probs[..., i-1].unsqueeze(-1))
-                # a[..., i, 1:] = torch.logaddexp(dont_take_i, take_i)
+                dont_take_i = a_as_vec + log1mexp(-log_probs[..., i-1].unsqueeze(-1))
+                take_i = a_j_min_1 + log_probs[..., i-1].unsqueeze(-1)
+
+                # Ensure the logaddexp is numerically stable by preventing the inf + inf case.
                 mask = torch.logical_and(torch.isinf(dont_take_i), torch.isinf(take_i))
                 a[..., i, 1:][mask] = dont_take_i[mask]
                 a[..., i, 1:][~mask] = torch.logaddexp(dont_take_i[~mask], take_i[~mask])
