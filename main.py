@@ -106,7 +106,7 @@ def train(args: Arguments):
                     row_isin = torch.isin(data.edge_index[0], previous_nodes)
                     col_isin = torch.isin(data.edge_index[1], batch_nodes)
                     isin = torch.logical_and(row_isin, col_isin)
-                    edge_index_hop = edge_index[:, torch.where(isin)[0]]
+                    edge_index_hop = data.edge_index[:, torch.where(isin)[0]]
                     global_edge_indices.append(edge_index_hop)
 
                     # Update the previous_nodes
