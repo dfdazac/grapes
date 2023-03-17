@@ -37,8 +37,9 @@ def train(args: Arguments):
 
     gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
     gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
+    log_z = torch.tensor(10, requires_grad=True).to(device)
     optimizer_c = Adam(gcn_c.parameters(), lr=1e-2)
-    optimizer_gf = Adam(gcn_gf.parameters(), lr=1e-2)
+    optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=1e-2)
     loss_fn = nn.CrossEntropyLoss()
 
     train_idx = data.train_mask.nonzero()
