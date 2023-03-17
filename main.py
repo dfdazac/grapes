@@ -14,19 +14,19 @@ from modules.utils import get_neighboring_nodes, sample_neighborhoods_from_probs
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# torch.autograd.set_detect_anomaly(True)
 
 class Arguments(Tap):
     dataset: str = 'cora'
     num_hops: int = 2
     notes: str = None
-    log_wandb: bool = False
+    log_wandb: bool = True
     batch_size: int = 16
-    num_samples: int = 100  # TODO Change this
+    num_samples: int = 20
 
 
 def train(args: Arguments):
     wandb.init(project='gflow-sampling',
+               entity='gflow-samp',
                mode='online' if args.log_wandb else 'disabled',
                config=args.as_dict(),
                notes=args.notes)
