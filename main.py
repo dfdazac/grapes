@@ -59,6 +59,7 @@ def train(args: Arguments):
                     target_nodes = train_idx[batch_id * batch_size:(batch_id + 1) * batch_size]
 
                 previous_nodes = target_nodes.clone()
+                all_nodes = target_nodes.clone().squeeze(1)
 
                 # Here's where we use GCN-GF to sample
                 global_edge_indices = []
@@ -97,7 +98,8 @@ def train(args: Arguments):
                     log_probs.append(log_prob)
 
                     # Update batch nodes
-                    batch_nodes = torch.unique(sampled_neighboring_nodes)
+                    batch_nodes = torch.cat([target_nodes.squeeze(1), sampled_neighboring_nodes], dim=0)
+                    all_nodes = torch.unique(torch.cat([all_nodes, sampled_neighboring_nodes], dim=0))
 
                     # TODO Keep track of edges
                     row_isin = torch.isin(data.edge_index[0], previous_nodes)
@@ -113,7 +115,7 @@ def train(args: Arguments):
 
                 # Converting global indices to the local of final batch_nodes.
                 # The final batch_nodes are the nodes sampled from the second hop concatenated with the target nodes
-                global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
+                global_to_local_idx = {i.item(): j for j, i in enumerate(all_nodes)}
                 local_edge_indices = []
                 for edge_index in global_edge_indices:
                     local_index = torch.zeros_like(edge_index, device=device)
@@ -121,7 +123,10 @@ def train(args: Arguments):
                     local_index[1] = torch.tensor([global_to_local_idx[i.item()] for i in edge_index[1]])
                     local_edge_indices.append(local_index)
 
-                logits = gcn_c(data.x[batch_nodes].to(device),
+                # convert list to tensor
+                local_edge_indices = torch.cat(local_edge_indices, dim=1)
+
+                logits = gcn_c(data.x[all_nodes].to(device),
                                local_edge_indices)
                 local_target_ids = torch.tensor([global_to_local_idx[i.item()] for i in target_nodes])
                 loss_c = loss_fn(logits[local_target_ids],
