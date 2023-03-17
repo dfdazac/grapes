@@ -127,11 +127,9 @@ def train(args: Arguments):
                 # convert list to tensor
                 local_edge_indices = torch.cat(local_edge_indices, dim=1)
 
-                logits = gcn_c(data.x[all_nodes].to(device),
-                               local_edge_indices)
+                logits = gcn_c(data.x[all_nodes].to(device), local_edge_indices)
                 local_target_ids = torch.tensor([global_to_local_idx[i.item()] for i in target_nodes])
-                loss_c = loss_fn(logits[local_target_ids],
-                               data.y[target_nodes].squeeze().to(device))
+                loss_c = loss_fn(logits[local_target_ids], data.y[target_nodes].squeeze().to(device))
 
                 optimizer_c.zero_grad()
                 loss_c.backward()
@@ -144,11 +142,15 @@ def train(args: Arguments):
 
                 # print("Classification loss", loss_c, "GFN loss", loss_gfn)
                 accuracy = evaluate(gcn_c, data, y, data.val_mask)
-                wandb.log({'valid-accuracy': accuracy})
-                wandb.log({'loss': loss_c.item()})
+                wandb.log({
+                    'epoch': epoch,
+                    'loss_c': loss_c.item() / len(target_nodes),
+                    'loss_gfn': loss_gfn.item() / len(target_nodes),
+                    'valid-accuracy': accuracy
+                })
 
-                loop.set_postfix({'loss': loss_c.item(), 'valid_acc': accuracy},
-                                 refresh=False)
+                # What does this line do?
+                loop.set_postfix({'loss': loss_c.item(), 'valid_acc': accuracy}, refresh=False)
 
     test_accuracy = evaluate(gcn_c, data, y, data.test_mask)
     print(f'Test accuracy: {test_accuracy:.1%}')
