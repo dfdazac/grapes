@@ -1,5 +1,7 @@
 import time
 import os
+from typing import Tuple
+
 import torch
 from .simple import KSubsetDistribution
 
@@ -7,7 +9,7 @@ from .simple import KSubsetDistribution
 def sample_neighborhoods_from_probs(probabilities: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
                                     num_samples: int = -1
-                                    ) -> torch.Tensor:
+                                    ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
     Args:
@@ -25,9 +27,9 @@ def sample_neighborhoods_from_probs(probabilities: torch.Tensor,
 
         # Check that we have the right number of samples
         assert len(neighbor_nodes) == num_samples
-        return neighbor_nodes
+        return neighbor_nodes, node_k_subset.log_prob(neighbor_nodes)
     else:
-        return neighbor_nodes
+        return neighbor_nodes, None
 
 
 def d(tensor=None):

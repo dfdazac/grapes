@@ -37,7 +37,7 @@ def train(args: Arguments):
 
     gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
     gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
-    log_z = torch.tensor(10, requires_grad=True).to(device)
+    log_z = torch.tensor(10., requires_grad=True).to(device)
     optimizer_c = Adam(gcn_c.parameters(), lr=1e-2)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=1e-2)
     loss_fn = nn.CrossEntropyLoss()
@@ -62,6 +62,7 @@ def train(args: Arguments):
 
                 # Here's where we use GCN-GF to sample
                 global_edge_indices = []
+                log_probs = []
                 for hop in range(args.num_hops):
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighboring_nodes(target_nodes, adjacency)
@@ -87,11 +88,13 @@ def train(args: Arguments):
                     node_probs = node_probs[nodes_idx]
 
                     # Sample Ai using the probabilities
-                    sampled_neighboring_nodes = sample_neighborhoods_from_probs(
+                    sampled_neighboring_nodes, log_prob = sample_neighborhoods_from_probs(
                         node_probs,
                         neighbor_nodes,
                         args.num_samples
                     )
+
+                    log_probs.append(log_prob)
 
                     # Update batch nodes
                     batch_nodes = torch.unique(sampled_neighboring_nodes)
@@ -114,18 +117,23 @@ def train(args: Arguments):
                 logits = gcn_c(data.x[batch_nodes].to(device),
                                local_edge_indices)
                 local_target_ids = torch.tensor([global_to_local_idx[i.item()] for i in batch_target_nodes])
-                loss = loss_fn(logits[local_target_ids],
+                loss_c = loss_fn(logits[local_target_ids],
                                data.y[batch_target_nodes].squeeze().to(device))
 
                 optimizer_c.zero_grad()
-                loss.backward()
+                loss_c.backward()
                 optimizer_c.step()
+
+                optimizer_gf.zero_grad()
+                loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + loss_c.detach())**2
+                loss_gfn.backward()
+                optimizer_gf.step()
 
                 accuracy = evaluate(gcn_c, data, y, data.val_mask)
                 wandb.log({'valid-accuracy': accuracy})
-                wandb.log({'loss': loss.item()})
+                wandb.log({'loss': loss_c.item()})
 
-                loop.set_postfix({'loss': loss.item(), 'valid_acc': accuracy},
+                loop.set_postfix({'loss': loss_c.item(), 'valid_acc': accuracy},
                                  refresh=False)
 
     test_accuracy = evaluate(gcn_c, data, y, data.test_mask)
