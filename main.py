@@ -4,9 +4,11 @@ import torch
 import torch.nn as nn
 from torch.optim import Adam
 from torch_geometric.datasets import Planetoid
+from torch_geometric.datasets import Reddit
 from tqdm import tqdm
 import wandb
 import math
+import os
 
 
 from modules.gcn import GCN
@@ -14,14 +16,13 @@ from modules.utils import get_neighboring_nodes, sample_neighborhoods_from_probs
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
 class Arguments(Tap):
-    dataset: str = 'citeseer'
+    dataset: str = 'reddit'
     num_hops: int = 2
     notes: str = None
     log_wandb: bool = True
-    batch_size: int = 16
-    num_samples: int = 20
+    batch_size: int = 512
+    num_samples: int = 512
 
 
 def train(args: Arguments):
@@ -31,7 +32,12 @@ def train(args: Arguments):
                config=args.as_dict(),
                notes=args.notes)
 
-    data = Planetoid(root='data/Planetoid', name=args.dataset)[0]
+    if args.dataset == 'reddit':
+        path = os.path.join(os.getcwd(), 'data', 'Reddit')
+        dataset = Reddit(path)
+        data = dataset[0]
+    else:
+        data = Planetoid(root='data/Planetoid', name=args.dataset)[0]
     y = data.y.to(device)
     num_classes = len(data.y.unique())
 
