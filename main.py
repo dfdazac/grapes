@@ -43,7 +43,7 @@ def train(args: Arguments):
 
     gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
     gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
-    log_z = torch.tensor(100., requires_grad=True).to(device)
+    log_z = torch.tensor(100., requires_grad=True)
     optimizer_c = Adam(gcn_c.parameters(), lr=1e-2)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=1e-2)
     loss_fn = nn.CrossEntropyLoss()
@@ -170,7 +170,7 @@ def evaluate(model,
              mask: torch.Tensor
              ) -> float:
     # perform full batch message passing for evaluation
-    logits_total = model(data.x.to(device), data.edge_index)
+    logits_total = model(data.x.to(device), data.edge_index.to(device))
 
     predictions = torch.argmax(logits_total, dim=1)
     accuracy = accuracy_score(predictions[mask].cpu(), targets[mask].cpu())
