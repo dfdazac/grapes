@@ -13,7 +13,7 @@ class KSubsetDistribution(torch.distributions.ExponentialFamily):
     def __init__(self, probs: torch.Tensor, K: int, log_space=True):
         # See https://arxiv.org/pdf/2210.01941.pdf, in particular Algorithm 1, 2 and 5 and 6
         self.probs = probs.squeeze()
-        assert K < self.probs.shape[-1]
+        assert K <= self.probs.shape[-1]
         if len(self.probs.shape) == 1:
             self.probs = self.probs.unsqueeze(0)
         self._bernoulli = Bernoulli(probs=self.probs)

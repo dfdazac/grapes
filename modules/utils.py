@@ -19,6 +19,7 @@ def sample_neighborhoods_from_probs(probabilities: torch.Tensor,
         num_samples: the number of samples to keep. If None, all edges are kept.
     """
     if num_samples > 0:
+        num_samples = min(probabilities.shape[0], num_samples)
         node_k_subset = KSubsetDistribution(probabilities, num_samples)
         node_samples = node_k_subset.sample()
         neighbor_nodes = neighbor_nodes[node_samples.long() == 1]

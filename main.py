@@ -177,4 +177,4 @@ def evaluate(model,
     return accuracy
 
 
-train(Arguments().parse_args())
+train(Arguments(explicit_bool=True).parse_args())
