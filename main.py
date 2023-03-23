@@ -19,6 +19,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class Arguments(Tap):
     dataset: str = 'reddit'
     num_hops: int = 2
+    max_epochs = 100
     notes: str = None
     log_wandb: bool = True
     batch_size: int = 512
@@ -55,8 +56,7 @@ def train(args: Arguments):
                                         values=torch.ones(data.edge_index.shape[-1]),
                                         size=(data.num_nodes, data.num_nodes))
 
-    max_epochs = 100
-    with tqdm(range(max_epochs)) as loop:
+    with tqdm(range(args.max_epochs)) as loop:
         for epoch in loop:
             for batch_id in range(train_num_batches):
                 if batch_id == train_num_batches - 1:
@@ -128,9 +128,6 @@ def train(args: Arguments):
                     local_index[0] = torch.tensor([global_to_local_idx[i.item()] for i in edge_index[0]])
                     local_index[1] = torch.tensor([global_to_local_idx[i.item()] for i in edge_index[1]])
                     local_edge_indices.append(local_index)
-
-                # convert list to tensor
-                local_edge_indices = torch.cat(local_edge_indices, dim=1)
 
                 logits = gcn_c(data.x[all_nodes].to(device), local_edge_indices)
                 local_target_ids = torch.tensor([global_to_local_idx[i.item()] for i in target_nodes])

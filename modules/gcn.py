@@ -1,3 +1,5 @@
+from typing import Union
+
 import torch
 import torch.nn as nn
 from torch_geometric.nn import GCNConv
@@ -20,9 +22,15 @@ class GCN(nn.Module):
 
     def forward(self,
                 x: torch.Tensor,
-                edge_index: torch.Tensor,
+                edge_index: Union[torch.Tensor, list[torch.Tensor]],
                 ) -> torch.Tensor:
-        for layer in self.gcn_layers[:-1]:
-            x = torch.relu(layer(x, edge_index))
-        logits = self.gcn_layers[-1](x, edge_index)
+        layerwise_adjacency = type(edge_index) == list
+
+        for i, layer in enumerate(self.gcn_layers[:-1], start=1):
+            edges = edge_index[-i] if layerwise_adjacency else edge_index
+            x = torch.relu(layer(x, edges))
+
+        edges = edge_index[0] if layerwise_adjacency else edge_index
+        logits = self.gcn_layers[-1](x, edges)
+
         return logits
