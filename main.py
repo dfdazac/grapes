@@ -1,4 +1,4 @@
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, f1_score
 from tap import Tap
 import torch
 import torch.nn as nn
@@ -10,11 +10,11 @@ import wandb
 import math
 import os
 
-
 from modules.gcn import GCN
 from modules.utils import get_neighboring_nodes, sample_neighborhoods_from_probs
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 class Arguments(Tap):
     dataset: str = 'reddit'
@@ -144,20 +144,26 @@ def train(args: Arguments):
                 optimizer_gf.step()
 
                 # print("Classification loss", loss_c, "GFN loss", loss_gfn)
-                accuracy = evaluate(gcn_c, data, y, data.val_mask)
+                accuracy, f1 = evaluate(gcn_c, data, y, data.val_mask)
                 wandb.log({
                     'epoch': epoch,
                     'loss_c': loss_c.item() / len(target_nodes),
                     'loss_gfn': loss_gfn.item() / len(target_nodes),
-                    'valid-accuracy': accuracy
+                    'valid-accuracy': accuracy,
+                    'valid-f1': f1
                 })
 
-                # What does this line do?
-                loop.set_postfix({'loss': loss_c.item(), 'valid_acc': accuracy, "gfn_loss": loss_gfn.item()}, refresh=True)
+                # Update progress bar
+                loop.set_postfix({'loss': loss_c.item(),
+                                  'valid_acc': accuracy,
+                                  'gfn_loss': loss_gfn.item()},
+                                 refresh=True)
 
-    test_accuracy = evaluate(gcn_c, data, y, data.test_mask)
-    print(f'Test accuracy: {test_accuracy:.1%}')
-    wandb.log({'test-accuracy': test_accuracy})
+    test_accuracy, test_f1 = evaluate(gcn_c, data, y, data.test_mask)
+    print(f'Test accuracy: {test_accuracy:.1%}'
+          f' Test f1: {test_f1:.1%}')
+    wandb.log({'test-accuracy': test_accuracy,
+               'test-f1': test_f1})
 
 
 @torch.inference_mode()
@@ -165,13 +171,16 @@ def evaluate(model,
              data,
              targets: torch.Tensor,
              mask: torch.Tensor
-             ) -> float:
+             ) -> tuple[float, float]:
     # perform full batch message passing for evaluation
     logits_total = model(data.x.to(device), data.edge_index.to(device))
 
-    predictions = torch.argmax(logits_total, dim=1)
-    accuracy = accuracy_score(predictions[mask].cpu(), targets[mask].cpu())
-    return accuracy
+    predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
+    targets = targets[mask].cpu()
+    accuracy = accuracy_score(targets, predictions)
+    f1 = f1_score(targets, predictions, average='micro')
+
+    return accuracy, f1
 
 
 train(Arguments().parse_args())
