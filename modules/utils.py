@@ -76,9 +76,7 @@ def get_neighboring_nodes(nodes, adjecency_matrix):
     assert type(nodes) == torch.Tensor  # nodes should be a tensor
     assert type(adjecency_matrix) == torch.Tensor  # adjecency_matrix should be a tensor
 
-    isin_row = torch.isin(adjecency_matrix._indices()[0], nodes)
-    isin_col = torch.isin(adjecency_matrix._indices()[1], nodes)
-    isin = isin_row | isin_col
+    isin = torch.isin(adjecency_matrix._indices()[0], nodes)
     edge_index = adjecency_matrix._indices()[:, torch.where(isin)[0]]
 
     # Convert the list of neighboring nodes to a tensor
