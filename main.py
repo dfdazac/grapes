@@ -9,6 +9,7 @@ from tqdm import tqdm
 import wandb
 import math
 import os
+from torch.distributions import Binomial
 
 from modules.gcn import GCN
 from modules.utils import get_neighboring_nodes, sample_neighborhoods_from_probs
@@ -24,6 +25,7 @@ class Arguments(Tap):
     log_wandb: bool = True
     batch_size: int = 512
     num_samples: int = 512
+    constrain_k_weight: float = 0.001
 
 
 def train(args: Arguments):
@@ -70,6 +72,8 @@ def train(args: Arguments):
                 # Here's where we use GCN-GF to sample
                 global_edge_indices = []
                 log_probs = []
+                sampled_sizes = []
+                neighborhood_sizes = []
                 for hop in range(args.num_hops):
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighboring_nodes(previous_nodes, adjacency)
@@ -88,20 +92,22 @@ def train(args: Arguments):
 
                     # Pass neighborhoods to GCN-GF and get probabilities for sampling each node
                     node_logits = gcn_gf(x.to(device), local_neighborhoods.to(device))
-                    node_probs = torch.sigmoid(node_logits)
+                    # node_probs = torch.sigmoid(node_logits)
 
                     # Filter out probabilities of target nodes
                     nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in neighbor_nodes])
-                    node_probs = node_probs[nodes_idx]
+                    node_logits = node_logits[nodes_idx]
 
                     # Sample Ai using the probabilities
                     sampled_neighboring_nodes, log_prob = sample_neighborhoods_from_probs(
-                        node_probs,
+                        node_logits,
                         neighbor_nodes,
                         args.num_samples
                     )
 
                     log_probs.append(log_prob)
+                    sampled_sizes.append(sampled_neighboring_nodes.shape[0])
+                    neighborhood_sizes.append(neighborhoods.shape[-1])
 
                     # Update batch nodes
                     batch_nodes = torch.cat([target_nodes.squeeze(1), sampled_neighboring_nodes], dim=0)
@@ -139,7 +145,14 @@ def train(args: Arguments):
 
                 optimizer_gf.zero_grad()
                 # print(log_z, torch.sum(torch.cat(log_probs, dim=0)), loss_c.detach())
-                loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + loss_c.detach())**2
+                cost_gfn = loss_c.detach()
+                for i in range(len(sampled_sizes)):
+                    # Check if the sampled size is likely under a binomial distribution with probability n/k
+                    binom = Binomial(total_count=torch.tensor(neighborhood_sizes[i], device=cost_gfn.device),
+                                     probs=torch.tensor(args.num_samples / neighborhood_sizes[i], device=cost_gfn.device))
+                    cost_gfn += -binom.log_prob(torch.tensor(sampled_sizes[i], device=cost_gfn.device))
+
+                loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + cost_gfn)**2
                 loss_gfn.backward()
                 optimizer_gf.step()
 
