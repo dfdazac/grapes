@@ -33,7 +33,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     logit = logits.squeeze(-1) + logit_bias
     b = Bernoulli(logits=logit)
     samples = b.sample()
-    neighbor_nodes = neighbor_nodes[samples == 1]
+    neighbor_nodes = neighbor_nodes[(samples == 1).cpu()]
     return neighbor_nodes, b.log_prob(samples)
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,
