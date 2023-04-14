@@ -90,6 +90,7 @@ def train(args: Arguments):
                 log_probs = []
                 sampled_sizes = []
                 neighborhood_sizes = []
+                all_statistics = []
                 # Sample neighborhoods with the GCN-GF model
                 for hop in range(args.sampling_hops):
                     # Get neighborhoods of target nodes in batch
@@ -117,7 +118,7 @@ def train(args: Arguments):
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
 
                     # Sample neighbors using the logits
-                    sampled_neighboring_nodes, log_prob = sample_neighborhoods_from_probs(
+                    sampled_neighboring_nodes, log_prob, statistics = sample_neighborhoods_from_probs(
                         node_logits,
                         neighbor_nodes,
                         args.num_samples
@@ -127,6 +128,7 @@ def train(args: Arguments):
                     log_probs.append(log_prob)
                     sampled_sizes.append(sampled_neighboring_nodes.shape[0])
                     neighborhood_sizes.append(neighborhoods.shape[-1])
+                    all_statistics.append(statistics)
 
                     # Update batch nodes for next hop
                     batch_nodes = torch.cat([target_nodes,
@@ -197,11 +199,17 @@ def train(args: Arguments):
                                     args.eval_on_cpu)
             if args.eval_on_cpu:
                 gcn_c.to(device)
-            wandb.log({'epoch': epoch,
+
+            log_dict = {'epoch': epoch,
                        'loss_gfn': acc_loss_gfn,
                        'loss_c': acc_loss_c,
                        'valid_accuracy': accuracy,
-                       'valid_f1': f1})
+                       'valid_f1': f1}
+            for i, statistics in enumerate(all_statistics):
+                for key, value in statistics.items():
+                    log_dict[f"{key}_{i}"] = value
+            wandb.log(log_dict)
+
             logger.info(f'loss_gfn={acc_loss_gfn:.6f}, '
                         f'loss_c={acc_loss_c:.6f}, '
                         f'valid_accuracy={accuracy:.3f}, '
