@@ -18,13 +18,13 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class Arguments(Tap):
-    dataset: str = 'reddit'
+    dataset: str = 'Cora'
     num_hops: int = 2
     max_epochs = 100
     notes: str = None
     log_wandb: bool = True
     batch_size: int = 512
-    num_samples: int = 512
+    num_samples: int = 20
     constrain_k_weight: float = 0.001
 
 
@@ -44,11 +44,12 @@ def train(args: Arguments):
     y = data.y.to(device)
     num_classes = len(data.y.unique())
 
+    features_plus = data.num_features + args.num_hops + 1  # indicator features for target nodes and hops
+    gcn_gf = GCN(features_plus, hidden_dims=[32, 1]).to(device)
     gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
-    gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
     log_z = torch.tensor(100., requires_grad=True)
-    optimizer_c = Adam(gcn_c.parameters(), lr=1e-2)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=1e-2)
+    optimizer_c = Adam(gcn_c.parameters(), lr=1e-2)
     loss_fn = nn.CrossEntropyLoss()
 
     train_idx = data.train_mask.nonzero()
@@ -74,6 +75,20 @@ def train(args: Arguments):
                 log_probs = []
                 sampled_sizes = []
                 neighborhood_sizes = []
+
+                node_features = data.x
+
+                # Add indicator features for target nodes
+                target_indicator = torch.zeros((data.num_nodes, 1)).to(device)
+                target_indicator[target_nodes] = 1
+                node_features = torch.cat((node_features, target_indicator), dim=1)
+
+                anchor = node_features.size(1)  # Index of first hop indicator feature
+
+                # Add a feature for each hop
+                hop_indicator = torch.zeros((data.num_nodes, args.num_hops)).to(device)
+                node_features = torch.cat((node_features, hop_indicator), dim=1)
+
                 for hop in range(args.num_hops):
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighboring_nodes(previous_nodes, adjacency)
@@ -82,8 +97,11 @@ def train(args: Arguments):
                     batch_nodes = torch.unique(neighborhoods)  # Contains target nodes and their one-hop neighbors
                     neighbor_nodes = batch_nodes[~torch.isin(batch_nodes, previous_nodes)]
 
+                    # # Add indicator features to indicate in which hop a node was added
+                    node_features[neighbor_nodes, (anchor + hop)] = 1
+
                     global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
-                    x = data.x[batch_nodes]
+                    x = node_features[batch_nodes]
 
                     # Build edge index with local identifiers
                     local_neighborhoods = torch.zeros_like(neighborhoods)
@@ -92,7 +110,6 @@ def train(args: Arguments):
 
                     # Pass neighborhoods to GCN-GF and get probabilities for sampling each node
                     node_logits = gcn_gf(x.to(device), local_neighborhoods.to(device))
-                    # node_probs = torch.sigmoid(node_logits)
 
                     # Filter out probabilities of target nodes
                     nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in neighbor_nodes])
@@ -183,7 +200,7 @@ def train(args: Arguments):
 def evaluate(model,
              data,
              targets: torch.Tensor,
-             mask: torch.Tensor
+             mask: torch.Tensor,
              ) -> tuple[float, float]:
     # perform full batch message passing for evaluation
     logits_total = model(data.x.to(device), data.edge_index.to(device))
