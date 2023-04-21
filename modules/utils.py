@@ -5,6 +5,7 @@ from torch.distributions import Bernoulli
 
 import torch
 import numpy as np
+import scipy.sparse as sp
 
 from modules.simple import KSubsetDistribution
 
@@ -116,3 +117,30 @@ def get_neighboring_nodes(nodes, adjecency_matrix):
 
 # x = get_neighboring_nodes(torch.tensor([0, 1, 2]), torch.tensor([[0, 1, 1], [1, 0, 1], [1, 1, 0]]))
 # print(x)
+
+def get_adj(edges, num_nodes):
+    adj = sp.coo_matrix((np.ones(edges.shape[0]), (edges[:, 0], edges[:, 1])),
+                    shape=(num_nodes, num_nodes), dtype=np.float32)
+    return adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
+
+
+def row_normalize(mx):
+    """Row-normalize sparse matrix"""
+    rowsum = np.array(mx.sum(1))
+    r_inv = np.power(rowsum, -1).flatten()
+    r_inv[np.isinf(r_inv)] = 0.
+    r_mat_inv = sp.diags(r_inv)
+
+    mx = r_mat_inv.dot(mx)
+    return mx
+
+
+def row_normalize(mx):
+    """Row-normalize sparse matrix"""
+    rowsum = np.array(mx.sum(1))
+    r_inv = np.power(rowsum, -1).flatten()
+    r_inv[np.isinf(r_inv)] = 0.
+    r_mat_inv = sp.diags(r_inv)
+
+    mx = r_mat_inv.dot(mx)
+    return mx

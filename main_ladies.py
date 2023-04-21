@@ -13,10 +13,10 @@ import math
 import os
 from torch.distributions import Binomial
 import time
-
+from scipy.sparse import coo_matrix
 
 from modules.gcn import GCN
-from modules.utils import get_neighboring_nodes, sample_neighborhoods_from_probs
+from modules.utils import *
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -58,13 +58,13 @@ def train(args: Arguments):
     train_idx = data.train_mask.nonzero()
     train_num_batches = max(math.ceil(len(train_idx) / args.batch_size), 1)
     batch_size = min(args.batch_size, len(data.train_mask))
+    adjacency = get_adj(data.edge_index, data.num_nodes)
     row_index = torch.cat((data.edge_index[0], data.edge_index[1]))
     col_index = torch.cat((data.edge_index[1], data.edge_index[0]))
     data.edge_index = torch.vstack((row_index, col_index))
-    adjacency = torch.sparse_coo_tensor(indices=data.edge_index,
-                                        values=torch.ones(data.edge_index.shape[-1]),
-                                        size=(data.num_nodes, data.num_nodes))
+    lap_matrix = row_normalize(adjacency + sp.eye(adjacency.shape[0]))
 
+    # pdb.set_trace()
     with tqdm(range(args.max_epochs)) as loop:
         for epoch in loop:
             for batch_id in range(train_num_batches):
@@ -83,41 +83,17 @@ def train(args: Arguments):
                 neighborhood_sizes = []
                 for hop in range(args.num_hops):
                     # Get neighborhoods of target nodes in batch
-                    neighborhoods = get_neighboring_nodes(previous_nodes, adjacency)
-
-                    # Select only rows of feature matrices that we need
-                    batch_nodes = torch.unique(neighborhoods)  # Contains target nodes and their one-hop neighbors
-                    neighbor_nodes = batch_nodes[~torch.isin(batch_nodes, previous_nodes)]
-
-                    global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
-                    x = data.x[batch_nodes]
-
-                    # Build edge index with local identifiers
-                    local_neighborhoods = torch.zeros_like(neighborhoods)
-                    local_neighborhoods[0] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[0]])
-                    local_neighborhoods[1] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[1]])
-
-                    # Pass neighborhoods to GCN-GF and get probabilities for sampling each node
-                    node_logits = gcn_gf(x.to(device), local_neighborhoods.to(device))
-                    # node_probs = torch.sigmoid(node_logits)
-
-                    # Filter out probabilities of target nodes
-                    nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in neighbor_nodes])
-                    node_logits = node_logits[nodes_idx]
-
-                    # Sample Ai using the probabilities
-                    sampled_neighboring_nodes, log_prob = sample_neighborhoods_from_probs(
-                        node_logits,
-                        neighbor_nodes,
-                        args.num_samples
-                    )
-
-                    log_probs.append(log_prob)
-                    sampled_sizes.append(sampled_neighboring_nodes.shape[0])
-                    neighborhood_sizes.append(neighborhoods.shape[-1])
+                    # neighborhoods = get_neighboring_nodes(previous_nodes, adjacency)
+                    # pdb.set_trace()
+                    adj_row = lap_matrix[previous_nodes.squeeze(), :]
+                    pi = np.array(np.sum(adj_row.multiply(adj_row), axis=0))[0]
+                    p = pi / np.sum(pi)
+                    s_num = np.min([np.sum(p > 0), args.num_samples])
+                    sampled_neighboring_nodes = np.random.choice(data.num_nodes, s_num, p=p, replace=False)
+                    sampled_neighboring_nodes = torch.tensor(sampled_neighboring_nodes)
 
                     # Update batch nodes
-                    batch_nodes = torch.cat([target_nodes.squeeze(1), sampled_neighboring_nodes], dim=0)
+                    batch_nodes = torch.unique(torch.cat([target_nodes.squeeze(1), sampled_neighboring_nodes], dim=0))
                     all_nodes = torch.unique(torch.cat([all_nodes, sampled_neighboring_nodes], dim=0))
 
                     # TODO Keep track of edges
@@ -151,34 +127,20 @@ def train(args: Arguments):
                 loss_c.backward()
                 optimizer_c.step()
                 print(f'training time: {time.time() - start_t}')
-                optimizer_gf.zero_grad()
-                # print(log_z, torch.sum(torch.cat(log_probs, dim=0)), loss_c.detach())
-                cost_gfn = loss_c.detach()
-                for i in range(len(sampled_sizes)):
-                    # Check if the sampled size is likely under a binomial distribution with probability n/k
-                    binom = Binomial(total_count=torch.tensor(neighborhood_sizes[i], device=cost_gfn.device),
-                                     probs=torch.tensor(args.num_samples / neighborhood_sizes[i], device=cost_gfn.device))
-                    cost_gfn += -binom.log_prob(torch.tensor(sampled_sizes[i], device=cost_gfn.device))
-
-                loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + cost_gfn)**2
-                loss_gfn.backward()
-                optimizer_gf.step()
 
                 # print("Classification loss", loss_c, "GFN loss", loss_gfn)
-                accuracy, f1 = [0, 0] #evaluate(gcn_c, data, y, data.val_mask)
+                accuracy, f1 = evaluate(gcn_c, data, y, data.val_mask)
                 wandb.log({
                     'epoch': epoch,
                     'loss_c': loss_c.item() / len(target_nodes),
-                    'loss_gfn': loss_gfn.item() / len(target_nodes),
                     'valid-accuracy': accuracy,
                     'valid-f1': f1
                 })
 
-                # Update progress bar
-                loop.set_postfix({'loss': loss_c.item(),
-                                  'valid_acc': accuracy,
-                                  'gfn_loss': loss_gfn.item()},
-                                 refresh=True)
+                # # Update progress bar
+                # loop.set_postfix({'loss': loss_c.item(),
+                #                   'valid_acc': accuracy,
+                #                  refresh=True)
 
     test_accuracy, test_f1 = evaluate(gcn_c, data, y, data.test_mask)
     print(f'Test accuracy: {test_accuracy:.1%}'
