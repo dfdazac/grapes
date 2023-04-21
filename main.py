@@ -18,7 +18,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class Arguments(Tap):
-    dataset: str = 'reddit'
+    dataset: str = 'cora'
     num_hops: int = 2
     max_epochs = 100
     notes: str = None
@@ -74,6 +74,7 @@ def train(args: Arguments):
                 log_probs = []
                 sampled_sizes = []
                 neighborhood_sizes = []
+                all_statistics = []
                 for hop in range(args.num_hops):
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighboring_nodes(previous_nodes, adjacency)
@@ -99,7 +100,7 @@ def train(args: Arguments):
                     node_logits = node_logits[nodes_idx]
 
                     # Sample Ai using the probabilities
-                    sampled_neighboring_nodes, log_prob = sample_neighborhoods_from_probs(
+                    sampled_neighboring_nodes, log_prob, statistics = sample_neighborhoods_from_probs(
                         node_logits,
                         neighbor_nodes,
                         args.num_samples
@@ -108,6 +109,7 @@ def train(args: Arguments):
                     log_probs.append(log_prob)
                     sampled_sizes.append(sampled_neighboring_nodes.shape[0])
                     neighborhood_sizes.append(neighborhoods.shape[-1])
+                    all_statistics.append(statistics)
 
                     # Update batch nodes
                     batch_nodes = torch.cat([target_nodes.squeeze(1), sampled_neighboring_nodes], dim=0)
@@ -158,13 +160,17 @@ def train(args: Arguments):
 
                 # print("Classification loss", loss_c, "GFN loss", loss_gfn)
                 accuracy, f1 = evaluate(gcn_c, data, y, data.val_mask)
-                wandb.log({
+                w_log_dict = {
                     'epoch': epoch,
                     'loss_c': loss_c.item() / len(target_nodes),
                     'loss_gfn': loss_gfn.item() / len(target_nodes),
                     'valid-accuracy': accuracy,
                     'valid-f1': f1
-                })
+                }
+                for i, statistics in enumerate(all_statistics):
+                    for key, value in statistics.items():
+                        w_log_dict[f"{key}_{i}"] = value
+                wandb.log(w_log_dict)
 
                 # Update progress bar
                 loop.set_postfix({'loss': loss_c.item(),
