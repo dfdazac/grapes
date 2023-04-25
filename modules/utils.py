@@ -1,10 +1,11 @@
-import time
 import os
+import time
 from typing import Tuple
-from torch.distributions import Bernoulli
 
-import torch
 import numpy as np
+import scipy.sparse as sp
+import torch
+from torch.distributions import Bernoulli
 
 from modules.simple import KSubsetDistribution
 
@@ -36,10 +37,11 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     neighbor_nodes = neighbor_nodes[(samples == 1).cpu()]
     return neighbor_nodes, b.log_prob(samples)
 
+
 def sample_neighborhood_simple(probabilities: torch.Tensor,
-                                    neighbor_nodes: torch.Tensor,
-                                    num_samples: int = -1
-                                    ) -> Tuple[torch.Tensor, torch.Tensor]:
+                               neighbor_nodes: torch.Tensor,
+                               num_samples: int = -1
+                               ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
     Args:
@@ -101,18 +103,12 @@ def toc():
         return time.time()-tics.pop()
 
 
-def get_neighboring_nodes(nodes, adjecency_matrix):
-    """ Returns a list of neighboring nodes for each node in `nodes """
-
-    assert type(nodes) == torch.Tensor  # nodes should be a tensor
-    assert type(adjecency_matrix) == torch.Tensor  # adjecency_matrix should be a tensor
-
-    isin = torch.isin(adjecency_matrix._indices()[0], nodes)
-    edge_index = adjecency_matrix._indices()[:, torch.where(isin)[0]]
-
-    # Convert the list of neighboring nodes to a tensor
+def get_neighboring_nodes(nodes: torch.Tensor,
+                          adjacency: sp.csr_matrix
+                          ) -> torch.Tensor:
+    """Returns the neighbors of a set of nodes from a given adjacency matrix"""
+    neighborhood = adjacency[nodes].tocoo()
+    edge_index = torch.stack([nodes[neighborhood.row],
+                              torch.tensor(neighborhood.col)],
+                             dim=0)
     return edge_index
-
-
-# x = get_neighboring_nodes(torch.tensor([0, 1, 2]), torch.tensor([[0, 1, 1], [1, 0, 1], [1, 1, 0]]))
-# print(x)

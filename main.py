@@ -74,7 +74,7 @@ def train(args: Arguments):
                     else:
                         target_nodes = train_idx[batch_id * batch_size:(batch_id + 1) * batch_size]
 
-                    previous_nodes = target_nodes.clone().squeeze()
+                    previous_nodes = target_nodes.clone().squeeze(1)
                     all_nodes = target_nodes.clone().squeeze(1)
 
                     # Here's where we use GCN-GF to sample
