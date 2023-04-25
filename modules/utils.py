@@ -6,6 +6,7 @@ import numpy as np
 import scipy.sparse as sp
 import torch
 from torch.distributions import Bernoulli
+from torch import Tensor
 
 from modules.simple import KSubsetDistribution
 
@@ -103,12 +104,28 @@ def toc():
         return time.time()-tics.pop()
 
 
-def get_neighboring_nodes(nodes: torch.Tensor,
-                          adjacency: sp.csr_matrix
-                          ) -> torch.Tensor:
+def get_neighbors_data(nodes: Tensor,
+                       adjacency: sp.csr_matrix
+                       ) -> tuple[Tensor, Tensor, Tensor]:
     """Returns the neighbors of a set of nodes from a given adjacency matrix"""
     neighborhood = adjacency[nodes].tocoo()
-    edge_index = torch.stack([nodes[neighborhood.row],
+    neighborhoods = torch.stack([nodes[neighborhood.row],
                               torch.tensor(neighborhood.col)],
+                             dim=0)
+
+    # Collect input nodes plus their one-hop neighbors
+    batch_nodes = torch.unique(neighborhoods)
+    # Collect only the neighbors
+    neighbor_nodes = batch_nodes[~torch.isin(batch_nodes, nodes)]
+
+    return neighborhoods, batch_nodes, neighbor_nodes
+
+
+def slice_adjacency(adjacency: sp.csr_matrix, rows: Tensor, cols: Tensor):
+    row_slice = adjacency[rows]
+    row_col_slice = row_slice[:, cols]
+    slice = row_col_slice.tocoo()
+    edge_index = torch.stack([rows[slice.row],
+                              cols[slice.col]],
                              dim=0)
     return edge_index
