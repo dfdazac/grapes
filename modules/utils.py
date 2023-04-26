@@ -129,3 +129,16 @@ def slice_adjacency(adjacency: sp.csr_matrix, rows: Tensor, cols: Tensor):
                               cols[slice.col]],
                              dim=0)
     return edge_index
+
+
+class TensorMap:
+    def __init__(self, size):
+        self.map_tensor = torch.empty(size, dtype=torch.long)
+        self.values = torch.arange(size)
+
+    def update(self, entries: Tensor):
+        values = self.values[:len(entries)]
+        self.map_tensor[entries] = values
+
+    def map(self, entries):
+        return self.map_tensor[entries]
