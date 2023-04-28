@@ -1,4 +1,3 @@
-import math
 import os
 
 import numpy as np
@@ -10,12 +9,14 @@ from sklearn.metrics import accuracy_score, f1_score
 from tap import Tap
 from torch.distributions import Binomial
 from torch.optim import Adam
+from torch.utils.data import DataLoader, TensorDataset
 from torch_geometric.datasets import Planetoid, Reddit
 from tqdm import tqdm
 
 from modules.gcn import GCN
 from modules.utils import (TensorMap, get_neighborhoods,
                            sample_neighborhoods_from_probs, slice_adjacency)
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -56,8 +57,7 @@ def train(args: Arguments):
     loss_fn = nn.CrossEntropyLoss()
 
     train_idx = data.train_mask.nonzero().squeeze(1)
-    train_num_batches = max(math.ceil(len(train_idx) / args.batch_size), 1)
-    batch_size = min(args.batch_size, len(data.train_mask))
+    loader = DataLoader(TensorDataset(train_idx), batch_size=args.batch_size)
     adjacency = sp.csr_matrix((np.ones(data.num_edges, dtype=bool),
                                data.edge_index),
                               shape=(data.num_nodes, data.num_nodes))
@@ -67,21 +67,18 @@ def train(args: Arguments):
 
     with tqdm(range(args.max_epochs)) as loop:
         for epoch in loop:
-            for batch_id in range(train_num_batches):
-                if batch_id == train_num_batches - 1:
-                    target_nodes = train_idx[batch_id * batch_size:]
-                else:
-                    target_nodes = train_idx[batch_id * batch_size:(batch_id + 1) * batch_size]
+            for batch in loader:
+                target_nodes = batch[0]
 
                 previous_nodes = target_nodes.clone()
                 all_nodes_mask = torch.zeros_like(prev_nodes_mask)
                 all_nodes_mask[target_nodes] = True
 
-                # Here's where we use GCN-GF to sample
                 global_edge_indices = []
                 log_probs = []
                 sampled_sizes = []
                 neighborhood_sizes = []
+                # Sample neighborhoods with the GCN-GF model
                 for hop in range(args.num_hops):
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighborhoods(previous_nodes, adjacency)
@@ -164,7 +161,6 @@ def train(args: Arguments):
                 loss_gfn.backward()
                 optimizer_gf.step()
 
-                # print("Classification loss", loss_c, "GFN loss", loss_gfn)
                 accuracy, f1 = evaluate(gcn_c, data, data.val_mask)
                 wandb.log({
                     'epoch': epoch,
