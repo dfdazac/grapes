@@ -5,8 +5,8 @@ from typing import Tuple
 import numpy as np
 import scipy.sparse as sp
 import torch
-from torch.distributions import Bernoulli
 from torch import Tensor
+from torch.distributions import Bernoulli
 
 from modules.simple import KSubsetDistribution
 
@@ -104,24 +104,21 @@ def toc():
         return time.time()-tics.pop()
 
 
-def get_neighbors_data(nodes: Tensor,
-                       adjacency: sp.csr_matrix
-                       ) -> tuple[Tensor, Tensor, Tensor]:
+def get_neighborhoods(nodes: Tensor,
+                      adjacency: sp.csr_matrix
+                      ) -> Tensor:
     """Returns the neighbors of a set of nodes from a given adjacency matrix"""
     neighborhood = adjacency[nodes].tocoo()
     neighborhoods = torch.stack([nodes[neighborhood.row],
-                              torch.tensor(neighborhood.col)],
-                             dim=0)
-
-    # Collect input nodes plus their one-hop neighbors
-    batch_nodes = torch.unique(neighborhoods)
-    # Collect only the neighbors
-    neighbor_nodes = batch_nodes[~torch.isin(batch_nodes, nodes)]
-
-    return neighborhoods, batch_nodes, neighbor_nodes
+                                 torch.tensor(neighborhood.col)],
+                                dim=0)
+    return neighborhoods
 
 
 def slice_adjacency(adjacency: sp.csr_matrix, rows: Tensor, cols: Tensor):
+    """Selects a block from a sparse adjacency matrix, given the row and column
+    indices. The result is returned as an edge index.
+    """
     row_slice = adjacency[rows]
     row_col_slice = row_slice[:, cols]
     slice = row_col_slice.tocoo()
@@ -132,13 +129,24 @@ def slice_adjacency(adjacency: sp.csr_matrix, rows: Tensor, cols: Tensor):
 
 
 class TensorMap:
+    """A class used to quickly map integers in a tensor to an interval of
+    integers from 0 to len(tensor) - 1. This is useful for global to local
+    conversions.
+
+    Example:
+        >>> nodes = torch.tensor([22, 32, 42, 52])
+        >>> node_map = TensorMap(size=nodes.max() + 1)
+        >>> node_map.update(nodes)
+        >>> node_map.map(torch.tensor([52, 42, 32, 22, 22]))
+        tensor([3, 2, 1, 0, 0])
+    """
     def __init__(self, size):
         self.map_tensor = torch.empty(size, dtype=torch.long)
         self.values = torch.arange(size)
 
-    def update(self, entries: Tensor):
-        values = self.values[:len(entries)]
-        self.map_tensor[entries] = values
+    def update(self, keys: Tensor):
+        values = self.values[:len(keys)]
+        self.map_tensor[keys] = values
 
-    def map(self, entries):
-        return self.map_tensor[entries]
+    def map(self, keys):
+        return self.map_tensor[keys]
