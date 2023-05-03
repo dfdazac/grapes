@@ -31,6 +31,7 @@ class Arguments(Tap):
     max_epochs: int = 100
     batch_size: int = 512
     eval_frequency: int = 5
+    eval_on_cpu: bool = False
 
     notes: str = None
     log_wandb: bool = True
@@ -177,8 +178,14 @@ def train(args: Arguments):
                 acc_loss_c += batch_loss_c / len(loader)
 
             if (epoch + 1) % args.eval_frequency == 0:
-
-                accuracy, f1 = evaluate(gcn_c, data, data.val_mask)
+                if args.eval_on_cpu:
+                    gcn_c.cpu()
+                accuracy, f1 = evaluate(gcn_c,
+                                        data,
+                                        data.val_mask,
+                                        args.eval_on_cpu)
+                if args.eval_on_cpu:
+                    gcn_c.to(device)
                 wandb.log({'epoch': epoch,
                            'loss_gfn': acc_loss_gfn,
                            'loss_c': acc_loss_c,
@@ -189,8 +196,12 @@ def train(args: Arguments):
                 loop.set_postfix({'loss': loss_c.item(),
                                   'gfn_loss': loss_gfn.item(),
                                   'valid_acc': accuracy})
-
-    test_accuracy, test_f1 = evaluate(gcn_c, data, data.test_mask)
+    if args.eval_on_cpu:
+        gcn_c.cpu()
+    test_accuracy, test_f1 = evaluate(gcn_c,
+                                      data,
+                                      data.test_mask,
+                                      args.eval_on_cpu)
     print(f'Test accuracy: {test_accuracy:.1%}'
           f' Test f1: {test_f1:.1%}')
     wandb.log({'test_accuracy': test_accuracy,
@@ -200,10 +211,17 @@ def train(args: Arguments):
 @torch.inference_mode()
 def evaluate(model,
              data,
-             mask: torch.Tensor
+             mask: torch.Tensor,
+             eval_on_cpu: bool
              ) -> tuple[float, float]:
+    x = data.x
+    edge_index = data.edge_index
+    if not eval_on_cpu:
+        x = x.to(device)
+        edge_index = edge_index.to(device)
+
     # perform full batch message passing for evaluation
-    logits_total = model(data.x.to(device), data.edge_index.to(device))
+    logits_total = model(x, edge_index)
 
     predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
     targets = data.y[mask]
