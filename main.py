@@ -23,13 +23,17 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class Arguments(Tap):
     dataset: str = 'reddit'
-    num_hops: int = 2
-    max_epochs: int = 100
-    notes: str = None
-    log_wandb: bool = True
-    batch_size: int = 512
+
+    sampling_hops: int = 2
     num_samples: int = 512
     constrain_k_weight: float = 0.001
+
+    max_epochs: int = 100
+    batch_size: int = 512
+    eval_frequency: int = 5
+
+    notes: str = None
+    log_wandb: bool = True
 
 
 def train(args: Arguments):
@@ -67,7 +71,9 @@ def train(args: Arguments):
 
     with tqdm(range(args.max_epochs)) as loop:
         for epoch in loop:
-            for batch in loader:
+            acc_loss_gfn = 0
+            acc_loss_c = 0
+            for batch_id, batch in enumerate(loader):
                 target_nodes = batch[0]
 
                 previous_nodes = target_nodes.clone()
@@ -79,7 +85,7 @@ def train(args: Arguments):
                 sampled_sizes = []
                 neighborhood_sizes = []
                 # Sample neighborhoods with the GCN-GF model
-                for hop in range(args.num_hops):
+                for hop in range(args.sampling_hops):
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighborhoods(previous_nodes, adjacency)
 
@@ -161,26 +167,34 @@ def train(args: Arguments):
                 loss_gfn.backward()
                 optimizer_gf.step()
 
+                batch_loss_gfn = loss_gfn.item()
+                batch_loss_c = loss_c.item()
+
+                wandb.log({'batch_loss_gfn': batch_loss_gfn,
+                           'batch_loss_c': batch_loss_c})
+
+                acc_loss_gfn += batch_loss_gfn / len(loader)
+                acc_loss_c += batch_loss_c / len(loader)
+
+            if (epoch + 1) % args.eval_frequency == 0:
+
                 accuracy, f1 = evaluate(gcn_c, data, data.val_mask)
-                wandb.log({
-                    'epoch': epoch,
-                    'loss_c': loss_c.item() / len(target_nodes),
-                    'loss_gfn': loss_gfn.item() / len(target_nodes),
-                    'valid-accuracy': accuracy,
-                    'valid-f1': f1
-                })
+                wandb.log({'epoch': epoch,
+                           'loss_gfn': acc_loss_gfn,
+                           'loss_c': acc_loss_c,
+                           'valid_accuracy': accuracy,
+                           'valid_f1': f1})
 
                 # Update progress bar
                 loop.set_postfix({'loss': loss_c.item(),
-                                  'valid_acc': accuracy,
-                                  'gfn_loss': loss_gfn.item()},
-                                 refresh=True)
+                                  'gfn_loss': loss_gfn.item(),
+                                  'valid_acc': accuracy})
 
     test_accuracy, test_f1 = evaluate(gcn_c, data, data.test_mask)
     print(f'Test accuracy: {test_accuracy:.1%}'
           f' Test f1: {test_f1:.1%}')
-    wandb.log({'test-accuracy': test_accuracy,
-               'test-f1': test_f1})
+    wandb.log({'test_accuracy': test_accuracy,
+               'test_f1': test_f1})
 
 
 @torch.inference_mode()
