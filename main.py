@@ -15,7 +15,8 @@ from tqdm import tqdm
 
 from modules.gcn import GCN
 from modules.utils import (TensorMap, get_neighborhoods,
-                           sample_neighborhoods_from_probs, slice_adjacency)
+                           sample_neighborhoods_from_probs, slice_adjacency,
+                           get_logger)
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -43,6 +44,7 @@ def train(args: Arguments):
                mode='online' if args.log_wandb else 'disabled',
                config=args.as_dict(),
                notes=args.notes)
+    logger = get_logger()
 
     if args.dataset == 'reddit':
         path = os.path.join(os.getcwd(), 'data', 'Reddit')
@@ -70,10 +72,11 @@ def train(args: Arguments):
     prev_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
     batch_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
 
-    with tqdm(range(args.max_epochs)) as loop:
-        for epoch in loop:
-            acc_loss_gfn = 0
-            acc_loss_c = 0
+    logger.info('Training')
+    for epoch in range(1, args.max_epochs + 1):
+        acc_loss_gfn = 0
+        acc_loss_c = 0
+        with tqdm(total=len(loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(loader):
                 target_nodes = batch[0]
 
@@ -177,35 +180,41 @@ def train(args: Arguments):
                 acc_loss_gfn += batch_loss_gfn / len(loader)
                 acc_loss_c += batch_loss_c / len(loader)
 
-            if (epoch + 1) % args.eval_frequency == 0:
-                if args.eval_on_cpu:
-                    gcn_c.cpu()
-                accuracy, f1 = evaluate(gcn_c,
-                                        data,
-                                        data.val_mask,
-                                        args.eval_on_cpu)
-                if args.eval_on_cpu:
-                    gcn_c.to(device)
-                wandb.log({'epoch': epoch,
-                           'loss_gfn': acc_loss_gfn,
-                           'loss_c': acc_loss_c,
-                           'valid_accuracy': accuracy,
-                           'valid_f1': f1})
+                bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,
+                                 'batch_loss_c': batch_loss_c})
+                bar.update()
 
-                # Update progress bar
-                loop.set_postfix({'loss': loss_c.item(),
-                                  'gfn_loss': loss_gfn.item(),
-                                  'valid_acc': accuracy})
+        bar.close()
+
+        if (epoch + 1) % args.eval_frequency == 0:
+            if args.eval_on_cpu:
+                gcn_c.cpu()
+            accuracy, f1 = evaluate(gcn_c,
+                                    data,
+                                    data.val_mask,
+                                    args.eval_on_cpu)
+            if args.eval_on_cpu:
+                gcn_c.to(device)
+            wandb.log({'epoch': epoch,
+                       'loss_gfn': acc_loss_gfn,
+                       'loss_c': acc_loss_c,
+                       'valid_accuracy': accuracy,
+                       'valid_f1': f1})
+            logger.info(f'loss_gfn={acc_loss_gfn:.6f}, '
+                        f'loss_c={acc_loss_c:.6f}, '
+                        f'valid_accuracy={accuracy:.3f}, '
+                        f'valid_f1={f1:.3f}')
+
     if args.eval_on_cpu:
         gcn_c.cpu()
     test_accuracy, test_f1 = evaluate(gcn_c,
                                       data,
                                       data.test_mask,
                                       args.eval_on_cpu)
-    print(f'Test accuracy: {test_accuracy:.1%}'
-          f' Test f1: {test_f1:.1%}')
     wandb.log({'test_accuracy': test_accuracy,
                'test_f1': test_f1})
+    logger.info(f'test_accuracy={test_accuracy:.3f}, '
+                f'test_f1={test_f1:.3f}')
 
 
 @torch.inference_mode()
@@ -214,6 +223,8 @@ def evaluate(model,
              mask: torch.Tensor,
              eval_on_cpu: bool
              ) -> tuple[float, float]:
+    get_logger().info('Evaluating')
+
     x = data.x
     edge_index = data.edge_index
     if not eval_on_cpu:
