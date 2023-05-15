@@ -28,6 +28,8 @@ class Arguments(Tap):
     sampling_hops: int = 2
     num_samples: int = 512
     constrain_k_weight: float = 0.001
+    lr_gf: float = 1e-3
+    lr_gc: float = 1e-3
 
     max_epochs: int = 100
     batch_size: int = 512
@@ -59,8 +61,8 @@ def train(args: Arguments):
     gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
     gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
     log_z = torch.tensor(100., requires_grad=True)
-    optimizer_c = Adam(gcn_c.parameters(), lr=1e-3)
-    optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=1e-3)
+    optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
+    optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
     loss_fn = nn.CrossEntropyLoss()
 
     train_idx = data.train_mask.nonzero().squeeze(1)
