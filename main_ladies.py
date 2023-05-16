@@ -160,12 +160,9 @@ def train(args: Arguments):
                 # print(f'training time: {time.time() - start_t}')
 
                 # print("Classification loss", loss_c, "GFN loss", loss_gfn)
-                accuracy, f1 = evaluate(gcn_c, data, data.val_mask, args.eval_on_cpu)
                 wandb.log({
                     'epoch': epoch,
-                    'loss_c': loss_c.item() / len(target_nodes),
-                    'valid-accuracy': accuracy,
-                    'valid-f1': f1
+                    'loss_c': loss_c.item() / len(target_nodes)
                 })
 
                 batch_loss_c = loss_c.item()
@@ -178,6 +175,23 @@ def train(args: Arguments):
                 bar.update()
 
         bar.close()
+
+        if (epoch + 1) % args.eval_frequency == 0:
+            if args.eval_on_cpu:
+                gcn_c.cpu()
+            accuracy, f1 = evaluate(gcn_c,
+                                    data,
+                                    data.val_mask,
+                                    args.eval_on_cpu)
+            if args.eval_on_cpu:
+                gcn_c.to(device)
+            wandb.log({'epoch': epoch,
+                       'loss_c': acc_loss_c,
+                       'valid_accuracy': accuracy,
+                       'valid_f1': f1})
+            logger.info(f'loss_c={acc_loss_c:.6f}, '
+                        f'valid_accuracy={accuracy:.3f}, '
+                        f'valid_f1={f1:.3f}')
 
     test_accuracy, test_f1 = evaluate(gcn_c, data, data.test_mask, args.eval_on_cpu)
     print(f'Test accuracy: {test_accuracy:.1%}'
