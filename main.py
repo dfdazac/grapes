@@ -1,35 +1,43 @@
-import pdb
+import os
 
-from sklearn.metrics import accuracy_score, f1_score
-from tap import Tap
+import numpy as np
+import scipy.sparse as sp
 import torch
 import torch.nn as nn
-from torch.optim import Adam
-from torch_geometric.datasets import Planetoid
-from torch_geometric.datasets import Reddit
-from tqdm import tqdm
 import wandb
-import math
-import os
+from sklearn.metrics import accuracy_score, f1_score
+from tap import Tap
 from torch.distributions import Binomial
-import time
-
+from torch.optim import Adam
+from torch.utils.data import DataLoader, TensorDataset
+from torch_geometric.datasets import Planetoid, Reddit
+from tqdm import tqdm
 
 from modules.gcn import GCN
-from modules.utils import get_neighboring_nodes, sample_neighborhoods_from_probs
+from modules.utils import (TensorMap, get_neighborhoods,
+                           sample_neighborhoods_from_probs, slice_adjacency,
+                           get_logger)
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class Arguments(Tap):
     dataset: str = 'reddit'
-    num_hops: int = 2
-    max_epochs: int = 100
-    notes: str = None
-    log_wandb: bool = True
-    batch_size: int = 512
+
+    sampling_hops: int = 2
     num_samples: int = 512
     constrain_k_weight: float = 0.001
+    lr_gf: float = 1e-3
+    lr_gc: float = 1e-3
+
+    max_epochs: int = 100
+    batch_size: int = 512
+    eval_frequency: int = 5
+    eval_on_cpu: bool = False
+
+    notes: str = None
+    log_wandb: bool = True
 
 
 def train(args: Arguments):
@@ -38,6 +46,7 @@ def train(args: Arguments):
                mode='online' if args.log_wandb else 'disabled',
                config=args.as_dict(),
                notes=args.notes)
+    logger = get_logger()
 
     if args.dataset == 'reddit':
         path = os.path.join(os.getcwd(), 'data', 'Reddit')
@@ -45,117 +54,117 @@ def train(args: Arguments):
         data = dataset[0]
     else:
         data = Planetoid(root='data/Planetoid', name=args.dataset)[0]
-    y = data.y.to(device)
+
     num_classes = len(data.y.unique())
+    node_map = TensorMap(size=data.num_nodes)
 
     gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
     gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
     log_z = torch.tensor(100., requires_grad=True)
-    optimizer_c = Adam(gcn_c.parameters(), lr=1e-2)
-    optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=1e-2)
+    optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
+    optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
     loss_fn = nn.CrossEntropyLoss()
-    # pdb.set_trace()
-    train_idx = data.train_mask.nonzero()
-    train_num_batches = max(math.ceil(len(train_idx) / args.batch_size), 1)
-    batch_size = min(args.batch_size, len(data.train_mask))
-    row_index = torch.cat((data.edge_index[0], data.edge_index[1]))
-    col_index = torch.cat((data.edge_index[1], data.edge_index[0]))
-    data.edge_index = torch.vstack((row_index, col_index))
-    adjacency = torch.sparse_coo_tensor(indices=data.edge_index,
-                                        values=torch.ones(data.edge_index.shape[-1]),
-                                        size=(data.num_nodes, data.num_nodes))
 
-    with tqdm(range(args.max_epochs)) as loop:
-        for epoch in loop:
-            for batch_id in range(train_num_batches):
-                if batch_id == train_num_batches - 1:
-                    target_nodes = train_idx[batch_id * batch_size:]
-                else:
-                    target_nodes = train_idx[batch_id * batch_size:(batch_id + 1) * batch_size]
+    train_idx = data.train_mask.nonzero().squeeze(1)
+    loader = DataLoader(TensorDataset(train_idx), batch_size=args.batch_size)
+    adjacency = sp.csr_matrix((np.ones(data.num_edges, dtype=bool),
+                               data.edge_index),
+                              shape=(data.num_nodes, data.num_nodes))
+
+    prev_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+    batch_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+
+    logger.info('Training')
+    for epoch in range(1, args.max_epochs + 1):
+        acc_loss_gfn = 0
+        acc_loss_c = 0
+        with tqdm(total=len(loader), desc=f'Epoch {epoch}') as bar:
+            for batch_id, batch in enumerate(loader):
+                target_nodes = batch[0]
 
                 previous_nodes = target_nodes.clone()
-                all_nodes = target_nodes.clone().squeeze(1)
+                all_nodes_mask = torch.zeros_like(prev_nodes_mask)
+                all_nodes_mask[target_nodes] = True
 
-                # Here's where we use GCN-GF to sample
                 global_edge_indices = []
                 log_probs = []
                 sampled_sizes = []
                 neighborhood_sizes = []
-                for hop in range(args.num_hops):
+                # Sample neighborhoods with the GCN-GF model
+                for hop in range(args.sampling_hops):
                     # Get neighborhoods of target nodes in batch
-                    neighborhoods = get_neighboring_nodes(previous_nodes, adjacency)
+                    neighborhoods = get_neighborhoods(previous_nodes, adjacency)
 
-                    # Select only rows of feature matrices that we need
-                    batch_nodes = torch.unique(neighborhoods)  # Contains target nodes and their one-hop neighbors
-                    neighbor_nodes = batch_nodes[~torch.isin(batch_nodes, previous_nodes)]
+                    # Identify batch nodes (nodes + neighbors) and neighbors
+                    prev_nodes_mask.zero_()
+                    batch_nodes_mask.zero_()
+                    prev_nodes_mask[previous_nodes] = True
+                    batch_nodes_mask[neighborhoods.view(-1)] = True
+                    neighbor_nodes_mask = batch_nodes_mask & ~prev_nodes_mask
 
-                    global_to_local_idx = {i.item(): j for j, i in enumerate(batch_nodes)}
-                    x = data.x[batch_nodes]
+                    batch_nodes = node_map.values[batch_nodes_mask]
+                    neighbor_nodes = node_map.values[neighbor_nodes_mask]
 
-                    # Build edge index with local identifiers
-                    local_neighborhoods = torch.zeros_like(neighborhoods)
-                    local_neighborhoods[0] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[0]])
-                    local_neighborhoods[1] = torch.tensor([global_to_local_idx[i.item()] for i in neighborhoods[1]])
+                    # Map neighborhoods to local node IDs
+                    node_map.update(batch_nodes)
+                    local_neighborhoods = node_map.map(neighborhoods).to(device)
+                    # Select only the needed rows from the feature matrix
+                    x = data.x[batch_nodes].to(device)
 
-                    # Pass neighborhoods to GCN-GF and get probabilities for sampling each node
-                    node_logits = gcn_gf(x.to(device), local_neighborhoods.to(device))
-                    # node_probs = torch.sigmoid(node_logits)
+                    # Get probabilities for sampling each node
+                    node_logits = gcn_gf(x, local_neighborhoods)
+                    # Select logits for neighbor nodes only
+                    node_logits = node_logits[node_map.map(neighbor_nodes)]
 
-                    # Filter out probabilities of target nodes
-                    nodes_idx = torch.tensor([global_to_local_idx[i.item()] for i in neighbor_nodes])
-                    node_logits = node_logits[nodes_idx]
-
-                    # Sample Ai using the probabilities
+                    # Sample neighbors using the logits
                     sampled_neighboring_nodes, log_prob = sample_neighborhoods_from_probs(
                         node_logits,
                         neighbor_nodes,
                         args.num_samples
                     )
+                    all_nodes_mask[sampled_neighboring_nodes] = True
 
                     log_probs.append(log_prob)
                     sampled_sizes.append(sampled_neighboring_nodes.shape[0])
                     neighborhood_sizes.append(neighborhoods.shape[-1])
 
-                    # Update batch nodes
-                    batch_nodes = torch.cat([target_nodes.squeeze(1), sampled_neighboring_nodes], dim=0)
-                    all_nodes = torch.unique(torch.cat([all_nodes, sampled_neighboring_nodes], dim=0))
+                    # Update batch nodes for next hop
+                    batch_nodes = torch.cat([target_nodes,
+                                             sampled_neighboring_nodes],
+                                            dim=0)
 
-                    # TODO Keep track of edges
-                    row_isin = torch.isin(data.edge_index[0], previous_nodes)
-                    col_isin = torch.isin(data.edge_index[1], batch_nodes)
-                    isin = torch.logical_and(row_isin, col_isin)
-                    edge_index_hop = data.edge_index[:, torch.where(isin)[0]]
-                    global_edge_indices.append(edge_index_hop)
+                    # Retrieve the edge index that results after sampling
+                    k_hop_edges = slice_adjacency(adjacency,
+                                                  rows=previous_nodes,
+                                                  cols=batch_nodes)
+                    global_edge_indices.append(k_hop_edges)
 
                     # Update the previous_nodes
                     previous_nodes = batch_nodes.clone()
 
-                # Pass A1, A2, ... (edge_index1, edge_index2, ...) to GCN-C
-
                 # Converting global indices to the local of final batch_nodes.
-                # The final batch_nodes are the nodes sampled from the second hop concatenated with the target nodes
-                global_to_local_idx = {i.item(): j for j, i in enumerate(all_nodes)}
-                local_edge_indices = []
-                for edge_index in global_edge_indices:
-                    local_index = torch.zeros_like(edge_index, device=device)
-                    local_index[0] = torch.tensor([global_to_local_idx[i.item()] for i in edge_index[0]])
-                    local_index[1] = torch.tensor([global_to_local_idx[i.item()] for i in edge_index[1]])
-                    local_edge_indices.append(local_index)
+                # The final batch_nodes are the nodes sampled from the second
+                # hop concatenated with the target nodes
+                all_nodes = node_map.values[all_nodes_mask]
+                node_map.update(all_nodes)
+                edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
-                start_t = time.time()
-                logits = gcn_c(data.x[all_nodes].to(device), local_edge_indices)
-                local_target_ids = torch.tensor([global_to_local_idx[i.item()] for i in target_nodes])
-                loss_c = loss_fn(logits[local_target_ids], data.y[target_nodes].squeeze().to(device))
+                x = data.x[all_nodes].to(device)
+                logits = gcn_c(x, edge_indices)
+
+                local_target_ids = node_map.map(target_nodes)
+                loss_c = loss_fn(logits[local_target_ids],
+                                 data.y[target_nodes].to(device))
 
                 optimizer_c.zero_grad()
                 loss_c.backward()
                 optimizer_c.step()
-                print(f'training time: {time.time() - start_t}')
+
                 optimizer_gf.zero_grad()
-                # print(log_z, torch.sum(torch.cat(log_probs, dim=0)), loss_c.detach())
                 cost_gfn = loss_c.detach()
                 for i in range(len(sampled_sizes)):
-                    # Check if the sampled size is likely under a binomial distribution with probability n/k
+                    # Check if the sampled size is likely under a
+                    # binomial distribution with probability n/k
                     binom = Binomial(total_count=torch.tensor(neighborhood_sizes[i], device=cost_gfn.device),
                                      probs=torch.tensor(args.num_samples / neighborhood_sizes[i], device=cost_gfn.device))
                     cost_gfn += -binom.log_prob(torch.tensor(sampled_sizes[i], device=cost_gfn.device))
@@ -164,40 +173,71 @@ def train(args: Arguments):
                 loss_gfn.backward()
                 optimizer_gf.step()
 
-                # print("Classification loss", loss_c, "GFN loss", loss_gfn)
-                accuracy, f1 = [0, 0] #evaluate(gcn_c, data, y, data.val_mask)
-                wandb.log({
-                    'epoch': epoch,
-                    'loss_c': loss_c.item() / len(target_nodes),
-                    'loss_gfn': loss_gfn.item() / len(target_nodes),
-                    'valid-accuracy': accuracy,
-                    'valid-f1': f1
-                })
+                batch_loss_gfn = loss_gfn.item()
+                batch_loss_c = loss_c.item()
 
-                # Update progress bar
-                loop.set_postfix({'loss': loss_c.item(),
-                                  'valid_acc': accuracy,
-                                  'gfn_loss': loss_gfn.item()},
-                                 refresh=True)
+                wandb.log({'batch_loss_gfn': batch_loss_gfn,
+                           'batch_loss_c': batch_loss_c})
 
-    test_accuracy, test_f1 = evaluate(gcn_c, data, y, data.test_mask)
-    print(f'Test accuracy: {test_accuracy:.1%}'
-          f' Test f1: {test_f1:.1%}')
-    wandb.log({'test-accuracy': test_accuracy,
-               'test-f1': test_f1})
+                acc_loss_gfn += batch_loss_gfn / len(loader)
+                acc_loss_c += batch_loss_c / len(loader)
+
+                bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,
+                                 'batch_loss_c': batch_loss_c})
+                bar.update()
+
+        bar.close()
+
+        if (epoch + 1) % args.eval_frequency == 0:
+            if args.eval_on_cpu:
+                gcn_c.cpu()
+            accuracy, f1 = evaluate(gcn_c,
+                                    data,
+                                    data.val_mask,
+                                    args.eval_on_cpu)
+            if args.eval_on_cpu:
+                gcn_c.to(device)
+            wandb.log({'epoch': epoch,
+                       'loss_gfn': acc_loss_gfn,
+                       'loss_c': acc_loss_c,
+                       'valid_accuracy': accuracy,
+                       'valid_f1': f1})
+            logger.info(f'loss_gfn={acc_loss_gfn:.6f}, '
+                        f'loss_c={acc_loss_c:.6f}, '
+                        f'valid_accuracy={accuracy:.3f}, '
+                        f'valid_f1={f1:.3f}')
+
+    if args.eval_on_cpu:
+        gcn_c.cpu()
+    test_accuracy, test_f1 = evaluate(gcn_c,
+                                      data,
+                                      data.test_mask,
+                                      args.eval_on_cpu)
+    wandb.log({'test_accuracy': test_accuracy,
+               'test_f1': test_f1})
+    logger.info(f'test_accuracy={test_accuracy:.3f}, '
+                f'test_f1={test_f1:.3f}')
 
 
 @torch.inference_mode()
 def evaluate(model,
              data,
-             targets: torch.Tensor,
-             mask: torch.Tensor
+             mask: torch.Tensor,
+             eval_on_cpu: bool
              ) -> tuple[float, float]:
+    get_logger().info('Evaluating')
+
+    x = data.x
+    edge_index = data.edge_index
+    if not eval_on_cpu:
+        x = x.to(device)
+        edge_index = edge_index.to(device)
+
     # perform full batch message passing for evaluation
-    logits_total = model(data.x.to(device), data.edge_index.to(device))
+    logits_total = model(x, edge_index)
 
     predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
-    targets = targets[mask].cpu()
+    targets = data.y[mask]
     accuracy = accuracy_score(targets, predictions)
     f1 = f1_score(targets, predictions, average='micro')
 

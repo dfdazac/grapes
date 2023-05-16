@@ -1,11 +1,13 @@
-import time
+import logging
 import os
+import time
 from typing import Tuple
-from torch.distributions import Bernoulli
 
-import torch
 import numpy as np
 import scipy.sparse as sp
+import torch
+from torch import Tensor
+from torch.distributions import Bernoulli
 
 from modules.simple import KSubsetDistribution
 
@@ -37,10 +39,11 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     neighbor_nodes = neighbor_nodes[(samples == 1).cpu()]
     return neighbor_nodes, b.log_prob(samples)
 
+
 def sample_neighborhood_simple(probabilities: torch.Tensor,
-                                    neighbor_nodes: torch.Tensor,
-                                    num_samples: int = -1
-                                    ) -> Tuple[torch.Tensor, torch.Tensor]:
+                               neighbor_nodes: torch.Tensor,
+                               num_samples: int = -1
+                               ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
     Args:
@@ -102,21 +105,66 @@ def toc():
         return time.time()-tics.pop()
 
 
-def get_neighboring_nodes(nodes, adjecency_matrix):
-    """ Returns a list of neighboring nodes for each node in `nodes """
+def get_neighborhoods(nodes: Tensor,
+                      adjacency: sp.csr_matrix
+                      ) -> Tensor:
+    """Returns the neighbors of a set of nodes from a given adjacency matrix"""
+    neighborhood = adjacency[nodes].tocoo()
+    neighborhoods = torch.stack([nodes[neighborhood.row],
+                                 torch.tensor(neighborhood.col)],
+                                dim=0)
+    return neighborhoods
 
-    assert type(nodes) == torch.Tensor  # nodes should be a tensor
-    assert type(adjecency_matrix) == torch.Tensor  # adjecency_matrix should be a tensor
 
-    isin = torch.isin(adjecency_matrix._indices()[0], nodes)
-    edge_index = adjecency_matrix._indices()[:, torch.where(isin)[0]]
-
-    # Convert the list of neighboring nodes to a tensor
+def slice_adjacency(adjacency: sp.csr_matrix, rows: Tensor, cols: Tensor):
+    """Selects a block from a sparse adjacency matrix, given the row and column
+    indices. The result is returned as an edge index.
+    """
+    row_slice = adjacency[rows]
+    row_col_slice = row_slice[:, cols]
+    slice = row_col_slice.tocoo()
+    edge_index = torch.stack([rows[slice.row],
+                              cols[slice.col]],
+                             dim=0)
     return edge_index
 
 
-# x = get_neighboring_nodes(torch.tensor([0, 1, 2]), torch.tensor([[0, 1, 1], [1, 0, 1], [1, 1, 0]]))
-# print(x)
+class TensorMap:
+    """A class used to quickly map integers in a tensor to an interval of
+    integers from 0 to len(tensor) - 1. This is useful for global to local
+    conversions.
+
+    Example:
+        >>> nodes = torch.tensor([22, 32, 42, 52])
+        >>> node_map = TensorMap(size=nodes.max() + 1)
+        >>> node_map.update(nodes)
+        >>> node_map.map(torch.tensor([52, 42, 32, 22, 22]))
+        tensor([3, 2, 1, 0, 0])
+    """
+    def __init__(self, size):
+        self.map_tensor = torch.empty(size, dtype=torch.long)
+        self.values = torch.arange(size)
+
+    def update(self, keys: Tensor):
+        values = self.values[:len(keys)]
+        self.map_tensor[keys] = values
+
+    def map(self, keys):
+        return self.map_tensor[keys]
+
+
+def get_logger():
+    """Get a default logger that includes a timestamp."""
+    logger = logging.getLogger('')
+    logger.handlers = []
+    ch = logging.StreamHandler()
+    str_fmt = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+    formatter = logging.Formatter(str_fmt, datefmt='%H:%M:%S')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+    logger.setLevel('INFO')
+
+    return logger
 
 def get_adj(edges, num_nodes):
     adj = sp.coo_matrix((np.ones(edges.shape[0]), (edges[:, 0], edges[:, 1])),
