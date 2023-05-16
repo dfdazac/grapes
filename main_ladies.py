@@ -3,6 +3,7 @@ import pdb
 from sklearn.metrics import accuracy_score, f1_score
 from tap import Tap
 import torch
+import scipy.sparse as sp
 import torch.nn as nn
 from torch.optim import Adam
 from torch_geometric.datasets import Planetoid
@@ -58,10 +59,10 @@ def train(args: Arguments):
     train_idx = data.train_mask.nonzero()
     train_num_batches = max(math.ceil(len(train_idx) / args.batch_size), 1)
     batch_size = min(args.batch_size, len(data.train_mask))
-    adjacency = get_adj(data.edge_index, data.num_nodes)
-    row_index = torch.cat((data.edge_index[0], data.edge_index[1]))
-    col_index = torch.cat((data.edge_index[1], data.edge_index[0]))
-    data.edge_index = torch.vstack((row_index, col_index))
+    # adjacency = get_adj(data.edge_index, data.num_nodes)
+    adjacency = sp.csr_matrix((np.ones(data.num_edges, dtype=bool),
+                               data.edge_index),
+                              shape=(data.num_nodes, data.num_nodes))
     lap_matrix = row_normalize(adjacency + sp.eye(adjacency.shape[0]))
 
     # pdb.set_trace()
@@ -85,7 +86,8 @@ def train(args: Arguments):
                     # Get neighborhoods of target nodes in batch
                     # neighborhoods = get_neighboring_nodes(previous_nodes, adjacency)
                     # pdb.set_trace()
-                    adj_row = lap_matrix[previous_nodes.squeeze(), :]
+                    # adj_row = lap_matrix[previous_nodes.squeeze(), :]
+                    adj_row = adjacency[previous_nodes.squeeze(), :]
                     pi = np.array(np.sum(adj_row.multiply(adj_row), axis=0))[0]
                     p = pi / np.sum(pi)
                     s_num = np.min([np.sum(p > 0), args.num_samples])
