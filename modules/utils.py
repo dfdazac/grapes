@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from typing import Tuple
+from typing import Tuple, Dict
 
 import numpy as np
 import scipy.sparse as sp
@@ -15,7 +15,7 @@ from modules.simple import KSubsetDistribution
 def sample_neighborhoods_from_probs(logits: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
                                     num_samples: int = -1
-                                    ) -> Tuple[torch.Tensor, torch.Tensor]:
+                                    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
     Args:
@@ -28,16 +28,28 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     k = num_samples
     n = neighbor_nodes.shape[0]
     if k == n:
-        return neighbor_nodes, torch.sigmoid(logits.squeeze(-1)).log().sum()
+        return neighbor_nodes, torch.sigmoid(logits.squeeze(-1)).log().sum(), {}
     assert k < n
     assert k > 0
     sampling_rate = k / n
     logit_bias = -np.log((1 / sampling_rate) - 1)
     logit = logits.squeeze(-1) + logit_bias
+
     b = Bernoulli(logits=logit)
+
+    entropy = b.entropy()
+    min_prob = b.probs.min(-1)[0]
+    max_prob = b.probs.max(-1)[0]
+
+    mean_entropy = entropy.mean()
+    var_entropy = torch.std(entropy)
+
     samples = b.sample()
+    k_sampled = samples.sum()
     neighbor_nodes = neighbor_nodes[(samples == 1).cpu()]
-    return neighbor_nodes, b.log_prob(samples)
+    return neighbor_nodes, b.log_prob(samples), {"min_prob": min_prob, "max_prob": max_prob,
+                                                 "mean_entropy": mean_entropy, "var_entropy": var_entropy,
+                                                 "k_nodes_sampled": k_sampled}
 
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,

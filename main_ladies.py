@@ -196,8 +196,8 @@ def train(args: Arguments):
     test_accuracy, test_f1 = evaluate(gcn_c, data, data.test_mask, args.eval_on_cpu)
     print(f'Test accuracy: {test_accuracy:.1%}'
           f' Test f1: {test_f1:.1%}')
-    wandb.log({'test-accuracy': test_accuracy,
-               'test-f1': test_f1})
+    wandb.log({'test_accuracy': test_accuracy,
+               'test_f1': test_f1})
 
 
 @torch.inference_mode()
