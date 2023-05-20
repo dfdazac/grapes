@@ -28,6 +28,7 @@ class Arguments(Tap):
     sampling_hops: int = 2
     num_samples: int = 512
     constrain_k_weight: float = 0.001
+    use_indicators: bool = True
     lr_gf: float = 1e-3
     lr_gc: float = 1e-3
 
@@ -58,8 +59,13 @@ def train(args: Arguments):
     num_classes = len(data.y.unique())
     node_map = TensorMap(size=data.num_nodes)
 
+    if args.use_indicators:
+        num_indicators = args.sampling_hops + 1
+    else:
+        num_indicators = 0
     gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
-    gcn_gf = GCN(data.num_features, hidden_dims=[32, 1]).to(device)
+    gcn_gf = GCN(data.num_features + num_indicators,
+                 hidden_dims=[32, 1]).to(device)
     log_z = torch.tensor(100., requires_grad=True)
     optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
@@ -73,6 +79,7 @@ def train(args: Arguments):
 
     prev_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
     batch_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+    indicator_features = torch.zeros((data.num_nodes, num_indicators))
 
     logger.info('Training')
     for epoch in range(1, args.max_epochs + 1):
@@ -85,6 +92,9 @@ def train(args: Arguments):
                 previous_nodes = target_nodes.clone()
                 all_nodes_mask = torch.zeros_like(prev_nodes_mask)
                 all_nodes_mask[target_nodes] = True
+
+                indicator_features.zero_()
+                indicator_features[target_nodes, -1] = 1.0
 
                 global_edge_indices = []
                 log_probs = []
@@ -105,12 +115,20 @@ def train(args: Arguments):
 
                     batch_nodes = node_map.values[batch_nodes_mask]
                     neighbor_nodes = node_map.values[neighbor_nodes_mask]
+                    indicator_features[neighbor_nodes, hop] = 1.0
 
                     # Map neighborhoods to local node IDs
                     node_map.update(batch_nodes)
                     local_neighborhoods = node_map.map(neighborhoods).to(device)
-                    # Select only the needed rows from the feature matrix
-                    x = data.x[batch_nodes].to(device)
+                    # Select only the needed rows from the feature and
+                    # indicator matrices
+                    if args.use_indicators:
+                        x = torch.cat([data.x[batch_nodes],
+                                       indicator_features[batch_nodes]],
+                                      dim=1
+                                      ).to(device)
+                    else:
+                        x = data.x[batch_nodes].to(device)
 
                     # Get probabilities for sampling each node
                     node_logits = gcn_gf(x, local_neighborhoods)
