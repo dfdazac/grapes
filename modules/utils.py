@@ -15,7 +15,7 @@ from modules.simple import KSubsetDistribution
 def sample_neighborhoods_from_probs(logits: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
                                     num_samples: int = -1
-                                    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
     Args:
@@ -28,7 +28,8 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     k = num_samples
     n = neighbor_nodes.shape[0]
     if k == n:
-        return neighbor_nodes, torch.sigmoid(logits.squeeze(-1)).log().sum(), {}
+        return neighbor_nodes, torch.sigmoid(
+            logits.squeeze(-1)).log().sum(), {}
     assert k < n
     assert k > 0
     sampling_rate = k / n
@@ -40,13 +41,19 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     min_prob = b.probs.min(-1)[0]
     max_prob = b.probs.max(-1)[0]
 
-    mean_entropy = entropy.mean()
-    var_entropy = torch.std(entropy)
+    mean_entropy, std_entropy = torch.std_mean(entropy)
 
     samples = b.sample()
     k_sampled = samples.sum()
     neighbor_nodes = neighbor_nodes[(samples == 1).cpu()]
-    return neighbor_nodes, b.log_prob(samples), {"min_prob": min_prob, "max_prob": max_prob, "mean_entropy": mean_entropy, "var_entropy": var_entropy, "k_nodes_sampled": k_sampled}
+
+    stats_dict = {"min_prob": min_prob,
+                  "max_prob": max_prob,
+                  "mean_entropy": mean_entropy,
+                  "std_entropy": std_entropy,
+                  "k_nodes_sampled": k_sampled}
+
+    return neighbor_nodes, b.log_prob(samples), stats_dict
 
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,
@@ -72,46 +79,6 @@ def sample_neighborhood_simple(probabilities: torch.Tensor,
         return neighbor_nodes, node_k_subset.log_prob(node_samples)
     else:
         return neighbor_nodes, None
-
-
-def d(tensor=None):
-    """
-    Returns a device string either for the best available device,
-    or for the device corresponding to the argument
-    :param tensor:
-    :return:
-    """
-    if tensor is None:
-        return 'cuda' if torch.cuda.is_available() else 'cpu'
-    return 'cuda' if tensor.is_cuda else 'cpu'
-
-
-def here(subpath=None):
-    """
-    :return: the path in which the package resides (the directory containing the 'former' dir)
-    """
-    if subpath is None:
-        return os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', subpath))
-
-
-def contains_nan(tensor):
-    return bool((tensor != tensor).sum() > 0)
-
-
-tics = []
-
-
-def tic():
-    tics.append(time.time())
-
-
-def toc():
-    if len(tics)==0:
-        return None
-    else:
-        return time.time()-tics.pop()
 
 
 def get_neighborhoods(nodes: Tensor,
@@ -150,6 +117,7 @@ class TensorMap:
         >>> node_map.map(torch.tensor([52, 42, 32, 22, 22]))
         tensor([3, 2, 1, 0, 0])
     """
+
     def __init__(self, size):
         self.map_tensor = torch.empty(size, dtype=torch.long)
         self.values = torch.arange(size)

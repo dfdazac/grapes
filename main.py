@@ -201,10 +201,10 @@ def train(args: Arguments):
                 gcn_c.to(device)
 
             log_dict = {'epoch': epoch,
-                       'loss_gfn': acc_loss_gfn,
-                       'loss_c': acc_loss_c,
-                       'valid_accuracy': accuracy,
-                       'valid_f1': f1}
+                        'loss_gfn': acc_loss_gfn,
+                        'loss_c': acc_loss_c,
+                        'valid_accuracy': accuracy,
+                        'valid_f1': f1}
             for i, statistics in enumerate(all_statistics):
                 for key, value in statistics.items():
                     log_dict[f"{key}_{i}"] = value
