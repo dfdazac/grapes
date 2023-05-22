@@ -27,7 +27,7 @@ class Arguments(Tap):
 
     sampling_hops: int = 2
     num_samples: int = 512
-    constrain_k_weight: float = 0.001
+    constrain_k_weight: float = 1.
     use_indicators: bool = True
     lr_gf: float = 1e-3
     lr_gc: float = 1e-3
@@ -66,7 +66,7 @@ def train(args: Arguments):
     gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
     gcn_gf = GCN(data.num_features + num_indicators,
                  hidden_dims=[32, 1]).to(device)
-    log_z = torch.tensor(100., requires_grad=True)
+    log_z = torch.tensor(0., requires_grad=True)
     optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
     loss_fn = nn.CrossEntropyLoss()
@@ -85,6 +85,7 @@ def train(args: Arguments):
     for epoch in range(1, args.max_epochs + 1):
         acc_loss_gfn = 0
         acc_loss_c = 0
+        acc_loss_binom = 0
         with tqdm(total=len(loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(loader):
                 target_nodes = batch[0]
@@ -181,13 +182,14 @@ def train(args: Arguments):
                 optimizer_c.step()
 
                 optimizer_gf.zero_grad()
-                cost_gfn = loss_c.detach()
+                binom_loss = 0.
                 for i in range(len(sampled_sizes)):
                     # Check if the sampled size is likely under a
                     # binomial distribution with probability n/k
-                    binom = Binomial(total_count=torch.tensor(neighborhood_sizes[i], device=cost_gfn.device),
-                                     probs=torch.tensor(args.num_samples / neighborhood_sizes[i], device=cost_gfn.device))
-                    cost_gfn += -binom.log_prob(torch.tensor(sampled_sizes[i], device=cost_gfn.device))
+                    binom = Binomial(total_count=torch.tensor(neighborhood_sizes[i], device=loss_c.device),
+                                     probs=torch.tensor(args.num_samples / neighborhood_sizes[i], device=loss_c.device))
+                    binom_loss += -binom.log_prob(torch.tensor(sampled_sizes[i], device=loss_c.device))
+                cost_gfn = loss_c.detach() + args.constrain_k_weight * binom_loss
 
                 loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + cost_gfn)**2
                 loss_gfn.backward()
@@ -195,15 +197,19 @@ def train(args: Arguments):
 
                 batch_loss_gfn = loss_gfn.item()
                 batch_loss_c = loss_c.item()
+                batch_loss_binom = binom_loss.item()
 
                 wandb.log({'batch_loss_gfn': batch_loss_gfn,
-                           'batch_loss_c': batch_loss_c})
+                           'batch_loss_c': batch_loss_c,
+                           'batch_loss_binom': binom_loss,})
 
                 acc_loss_gfn += batch_loss_gfn / len(loader)
                 acc_loss_c += batch_loss_c / len(loader)
+                acc_loss_binom += batch_loss_binom / len(loader)
 
                 bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,
-                                 'batch_loss_c': batch_loss_c})
+                                 'batch_loss_c': batch_loss_c,
+                                 'batch_loss_binom': binom_loss,})
                 bar.update()
 
         bar.close()
@@ -221,6 +227,7 @@ def train(args: Arguments):
             log_dict = {'epoch': epoch,
                         'loss_gfn': acc_loss_gfn,
                         'loss_c': acc_loss_c,
+                        'loss_binom': acc_loss_binom,
                         'valid_accuracy': accuracy,
                         'valid_f1': f1}
             for i, statistics in enumerate(all_statistics):
