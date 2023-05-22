@@ -1,13 +1,10 @@
 import logging
-import os
-import time
 from typing import Dict, Tuple
 
-import numpy as np
 import scipy.sparse as sp
 import torch
 from torch import Tensor
-from torch.distributions import Bernoulli
+from torch.distributions import Bernoulli, Gumbel
 
 from modules.simple import KSubsetDistribution
 
@@ -18,6 +15,9 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
+
+    Uses Gumbel-max trick to sample from Bernoulli distribution. This is off-policy, since the original input
+    distribution is a regular Bernoulli distribution.
     Args:
         logits: tensor of shape (N,), where N all the number of unique
             nodes in a batch, containing the probability of dropping the node.
@@ -27,33 +27,39 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
 
     k = num_samples
     n = neighbor_nodes.shape[0]
-    if k == n:
+    if k >= n:
+        # TODO: Test this setting
         return neighbor_nodes, torch.sigmoid(
             logits.squeeze(-1)).log().sum(), {}
     assert k < n
     assert k > 0
-    sampling_rate = k / n
-    logit_bias = -np.log((1 / sampling_rate) - 1)
-    logit = logits.squeeze(-1) + logit_bias
 
-    b = Bernoulli(logits=logit)
+    b = Bernoulli(logits=logits.squeeze())
+
+    # Gumbel-sort trick https://timvieira.github.io/blog/post/2014/08/01/gumbel-max-trick-and-weighted-reservoir-sampling/
+    gumbel = Gumbel(torch.tensor(0., device=logits.device), torch.tensor(1., device=logits.device))
+    gumbel_noise = gumbel.sample((n,))
+    perturbed_log_probs = b.probs.log() + gumbel_noise
+
+    samples = torch.topk(perturbed_log_probs, k=k, dim=0, sorted=False)[1]
+
     entropy = b.entropy()
     min_prob = b.probs.min(-1)[0]
     max_prob = b.probs.max(-1)[0]
 
     mean_entropy, std_entropy = torch.std_mean(entropy)
 
-    samples = b.sample()
-    k_sampled = samples.sum()
-    neighbor_nodes = neighbor_nodes[(samples == 1).cpu()]
+    mask = torch.zeros_like(logits.squeeze(), dtype=torch.float)
+    mask[samples] = 1
+
+    neighbor_nodes = neighbor_nodes[mask.bool().cpu()]
 
     stats_dict = {"min_prob": min_prob,
                   "max_prob": max_prob,
                   "mean_entropy": mean_entropy,
-                  "std_entropy": std_entropy,
-                  "k_nodes_sampled": k_sampled}
+                  "std_entropy": std_entropy}
 
-    return neighbor_nodes, b.log_prob(samples), stats_dict
+    return neighbor_nodes, b.log_prob(mask), stats_dict
 
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,

@@ -27,7 +27,6 @@ class Arguments(Tap):
 
     sampling_hops: int = 2
     num_samples: int = 512
-    constrain_k_weight: float = 1.
     use_indicators: bool = True
     lr_gf: float = 1e-3
     lr_gc: float = 1e-3
@@ -182,14 +181,7 @@ def train(args: Arguments):
                 optimizer_c.step()
 
                 optimizer_gf.zero_grad()
-                binom_loss = 0.
-                for i in range(len(sampled_sizes)):
-                    # Check if the sampled size is likely under a
-                    # binomial distribution with probability n/k
-                    binom = Binomial(total_count=torch.tensor(neighborhood_sizes[i], device=loss_c.device),
-                                     probs=torch.tensor(args.num_samples / neighborhood_sizes[i], device=loss_c.device))
-                    binom_loss += -binom.log_prob(torch.tensor(sampled_sizes[i], device=loss_c.device))
-                cost_gfn = loss_c.detach() + args.constrain_k_weight * binom_loss
+                cost_gfn = loss_c.detach()
 
                 loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + cost_gfn)**2
                 loss_gfn.backward()
@@ -197,19 +189,15 @@ def train(args: Arguments):
 
                 batch_loss_gfn = loss_gfn.item()
                 batch_loss_c = loss_c.item()
-                batch_loss_binom = binom_loss.item()
 
                 wandb.log({'batch_loss_gfn': batch_loss_gfn,
-                           'batch_loss_c': batch_loss_c,
-                           'batch_loss_binom': binom_loss,})
+                           'batch_loss_c': batch_loss_c,})
 
                 acc_loss_gfn += batch_loss_gfn / len(loader)
                 acc_loss_c += batch_loss_c / len(loader)
-                acc_loss_binom += batch_loss_binom / len(loader)
 
                 bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,
-                                 'batch_loss_c': batch_loss_c,
-                                 'batch_loss_binom': binom_loss,})
+                                 'batch_loss_c': batch_loss_c})
                 bar.update()
 
         bar.close()
