@@ -192,13 +192,17 @@ def train(args: Arguments):
                 batch_loss_c = loss_c.item()
 
                 wandb.log({'batch_loss_gfn': batch_loss_gfn,
-                           'batch_loss_c': batch_loss_c,})
+                           'batch_loss_c': batch_loss_c,
+                           'log_z': log_z,
+                           'log_probs': torch.sum(torch.cat(log_probs, dim=0))})
 
                 acc_loss_gfn += batch_loss_gfn / len(loader)
                 acc_loss_c += batch_loss_c / len(loader)
 
                 bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,
-                                 'batch_loss_c': batch_loss_c})
+                                 'batch_loss_c': batch_loss_c,
+                                 'log_z': log_z,
+                                 'log_probs': torch.sum(torch.cat(log_probs, dim=0))})
                 bar.update()
 
         bar.close()
