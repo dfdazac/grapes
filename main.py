@@ -30,6 +30,7 @@ class Arguments(Tap):
     use_indicators: bool = True
     lr_gf: float = 1e-3
     lr_gc: float = 1e-3
+    loss_coef: float = 1e4
 
     max_epochs: int = 100
     batch_size: int = 512
@@ -173,7 +174,7 @@ def train(args: Arguments):
                 logits = gcn_c(x, edge_indices)
 
                 local_target_ids = node_map.map(target_nodes)
-                loss_c = loss_fn(logits[local_target_ids],
+                loss_c = args.loss_coef*loss_fn(logits[local_target_ids],
                                  data.y[target_nodes].to(device))
 
                 optimizer_c.zero_grad()
