@@ -175,7 +175,7 @@ def train(args: Arguments):
                 logits = gcn_c(x, edge_indices)
 
                 local_target_ids = node_map.map(target_nodes)
-                loss_c = args.loss_coef*loss_fn(logits[local_target_ids],
+                loss_c = loss_fn(logits[local_target_ids],
                                  data.y[target_nodes].to(device))
 
                 optimizer_c.zero_grad()
@@ -185,7 +185,7 @@ def train(args: Arguments):
                 optimizer_gf.zero_grad()
                 cost_gfn = loss_c.detach()
 
-                loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + cost_gfn)**2
+                loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
                 loss_gfn.backward()
                 optimizer_gf.step()
 
