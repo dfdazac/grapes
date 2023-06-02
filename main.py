@@ -33,6 +33,7 @@ class Arguments(Tap):
     loss_coef: float = 1e4
     log_z_init: float = 0.
 
+    hidden_dim = 256
     max_epochs: int = 100
     batch_size: int = 512
     eval_frequency: int = 5
@@ -64,9 +65,9 @@ def train(args: Arguments):
         num_indicators = args.sampling_hops + 1
     else:
         num_indicators = 0
-    gcn_c = GCN(data.num_features, hidden_dims=[32, num_classes]).to(device)
+    gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes]).to(device)
     gcn_gf = GCN(data.num_features + num_indicators,
-                 hidden_dims=[32, 1]).to(device)
+                 hidden_dims=[args.hidden_dim, 1]).to(device)
     log_z = torch.tensor(args.log_z_init, requires_grad=True)
     optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
