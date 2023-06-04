@@ -105,7 +105,6 @@ def train(args: Arguments):
                 neighborhood_sizes = []
                 all_statistics = []
                 # Sample neighborhoods with the GCN-GF model
-                all_statistics = []
                 for hop in range(args.sampling_hops):
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighborhoods(previous_nodes, adjacency)
@@ -193,12 +192,6 @@ def train(args: Arguments):
 
                 batch_loss_gfn = loss_gfn.item()
                 batch_loss_c = loss_c.item()
-
-                w_log_dict = {}
-                for i, statistics in enumerate(all_statistics):
-                    for key, value in statistics.items():
-                        w_log_dict[f"{key}_{i}"] = value
-                wandb.log(w_log_dict)
 
                 wandb.log({'batch_loss_gfn': batch_loss_gfn,
                            'batch_loss_c': batch_loss_c,
