@@ -33,7 +33,7 @@ class Arguments(Tap):
     loss_coef: float = 1e4
     log_z_init: float = 0.
 
-    hidden_dim = 256
+    hidden_dim: int = 256
     max_epochs: int = 100
     batch_size: int = 512
     eval_frequency: int = 5
