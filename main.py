@@ -7,7 +7,6 @@ import torch.nn as nn
 import wandb
 from sklearn.metrics import accuracy_score, f1_score
 from tap import Tap
-from torch.distributions import Binomial
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from torch_geometric.datasets import Planetoid, Reddit
@@ -27,6 +26,7 @@ class Arguments(Tap):
 
     sampling_hops: int = 2
     num_samples: int = 512
+    sample_with_repalcement: bool = True
     use_indicators: bool = True
     lr_gf: float = 1e-4
     lr_gc: float = 1e-3
@@ -87,7 +87,6 @@ def train(args: Arguments):
     for epoch in range(1, args.max_epochs + 1):
         acc_loss_gfn = 0
         acc_loss_c = 0
-        acc_loss_binom = 0
         with tqdm(total=len(loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(loader):
                 target_nodes = batch[0]
@@ -222,7 +221,6 @@ def train(args: Arguments):
             log_dict = {'epoch': epoch,
                         'loss_gfn': acc_loss_gfn,
                         'loss_c': acc_loss_c,
-                        'loss_binom': acc_loss_binom,
                         'valid_accuracy': accuracy,
                         'valid_f1': f1}
             for i, statistics in enumerate(all_statistics):

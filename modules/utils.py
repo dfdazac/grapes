@@ -12,7 +12,8 @@ from modules.simple import KSubsetDistribution
 
 def sample_neighborhoods_from_probs(logits: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
-                                    num_samples: int = -1
+                                    num_samples: int = -1,
+                                    replacement: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
@@ -35,20 +36,13 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     assert k < n
     assert k > 0
 
-    b = Bernoulli(logits=logits.squeeze())
+    logits = logits.squeeze()
+    q_node = torch.softmax(logits, -1)
+    samples = torch.multinomial(q_node, k, replacement=replacement)
 
-    # Gumbel-sort trick https://timvieira.github.io/blog/post/2014/08/01/gumbel-max-trick-and-weighted-reservoir-sampling/
-    gumbel = Gumbel(torch.tensor(0., device=logits.device), torch.tensor(1., device=logits.device))
-    gumbel_noise = gumbel.sample((n,))
-    perturbed_log_probs = b.probs.log() + gumbel_noise
-
-    samples = torch.topk(perturbed_log_probs, k=k, dim=0, sorted=False)[1]
-
-    entropy = b.entropy()
-    min_prob = b.probs.min(-1)[0]
-    max_prob = b.probs.max(-1)[0]
-
-    mean_entropy, std_entropy = torch.std_mean(entropy)
+    entropy = -(q_node * torch.log(q_node)).sum(-1)
+    min_prob = q_node.min(-1)[0]
+    max_prob = q_node.max(-1)[0]
 
     mask = torch.zeros_like(logits.squeeze(), dtype=torch.float)
     mask[samples] = 1
@@ -57,10 +51,10 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
 
     stats_dict = {"min_prob": min_prob,
                   "max_prob": max_prob,
-                  "mean_entropy": mean_entropy,
-                  "std_entropy": std_entropy}
+                  "entropy": entropy,}
 
-    return neighbor_nodes, b.log_prob(mask), stats_dict
+
+    return neighbor_nodes, q_node[samples].log(), stats_dict
 
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,
