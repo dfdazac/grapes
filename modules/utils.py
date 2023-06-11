@@ -54,7 +54,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
                   "entropy": entropy,}
 
 
-    return neighbor_nodes, q_node[samples].log(), stats_dict
+    return neighbor_nodes, q_node[samples], stats_dict
 
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,

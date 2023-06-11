@@ -99,6 +99,7 @@ def train(args: Arguments):
                 indicator_features[target_nodes, -1] = 1.0
 
                 global_edge_indices = []
+                edge_weights = []
                 log_probs = []
                 sampled_sizes = []
                 neighborhood_sizes = []
@@ -133,19 +134,20 @@ def train(args: Arguments):
                         x = data.x[batch_nodes].to(device)
 
                     # Get probabilities for sampling each node
-                    node_logits = gcn_gf(x, local_neighborhoods)
+                    gcn_gf_edge_weights = torch.tensor(torch.ones_like(local_neighborhoods[1], dtype=torch.float32))
+                    node_logits = gcn_gf(x, local_neighborhoods, gcn_gf_edge_weights)
                     # Select logits for neighbor nodes only
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
 
                     # Sample neighbors using the logits
-                    sampled_neighboring_nodes, log_prob, statistics = sample_neighborhoods_from_probs(
+                    sampled_neighboring_nodes, probs, statistics = sample_neighborhoods_from_probs(
                         node_logits,
                         neighbor_nodes,
                         args.num_samples
                     )
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
-                    log_probs.append(log_prob)
+                    log_probs.append(probs.log())
                     sampled_sizes.append(sampled_neighboring_nodes.shape[0])
                     neighborhood_sizes.append(neighborhoods.shape[-1])
                     all_statistics.append(statistics)
@@ -160,7 +162,10 @@ def train(args: Arguments):
                                                   rows=previous_nodes,
                                                   cols=batch_nodes)
                     global_edge_indices.append(k_hop_edges)
-
+                    node_weight_temp = torch.cat([torch.ones_like(target_nodes),
+                                                   1/probs])
+                    node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
+                    edge_weights.append([node_weights_dict[i.item()] for i in k_hop_edges[1]])
                     # Update the previous_nodes
                     previous_nodes = batch_nodes.clone()
 
@@ -172,7 +177,7 @@ def train(args: Arguments):
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
                 x = data.x[all_nodes].to(device)
-                logits = gcn_c(x, edge_indices)
+                logits = gcn_c(x, edge_indices, edge_weights)
 
                 local_target_ids = node_map.map(target_nodes)
                 loss_c = loss_fn(logits[local_target_ids],
@@ -260,7 +265,8 @@ def evaluate(model,
         edge_index = edge_index.to(device)
 
     # perform full batch message passing for evaluation
-    logits_total = model(x, edge_index)
+    eval_edge_weights = torch.tensor(torch.ones_like(edge_index[1], dtype=torch.float32))
+    logits_total = model(x, edge_index, eval_edge_weights)
 
     predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
     targets = data.y[mask]

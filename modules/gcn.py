@@ -23,14 +23,17 @@ class GCN(nn.Module):
     def forward(self,
                 x: torch.Tensor,
                 edge_index: Union[torch.Tensor, list[torch.Tensor]],
+                edge_weight: Union[torch.Tensor, list[torch.Tensor]]
                 ) -> torch.Tensor:
         layerwise_adjacency = type(edge_index) == list
 
         for i, layer in enumerate(self.gcn_layers[:-1], start=1):
             edges = edge_index[-i] if layerwise_adjacency else edge_index
-            x = torch.relu(layer(x, edges))
+            weight = torch.tensor(edge_weight[-i]) if layerwise_adjacency else edge_weight
+            x = torch.relu(layer(x, edges, weight))
 
         edges = edge_index[0] if layerwise_adjacency else edge_index
-        logits = self.gcn_layers[-1](x, edges)
+        weight = torch.tensor(edge_weight[0]) if layerwise_adjacency else edge_weight
+        logits = self.gcn_layers[-1](x, edges, weight)
 
         return logits
