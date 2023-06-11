@@ -163,9 +163,9 @@ def train(args: Arguments):
                                                   cols=batch_nodes)
                     global_edge_indices.append(k_hop_edges)
                     node_weight_temp = torch.cat([torch.ones_like(target_nodes),
-                                                   1/probs])
+                                                   1/probs.to('cpu')])
                     node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
-                    edge_weights.append([node_weights_dict[i.item()] for i in k_hop_edges[1]])
+                    edge_weights.append(torch.tensor([node_weights_dict[i.item()] for i in k_hop_edges[1]]))
                     # Update the previous_nodes
                     previous_nodes = batch_nodes.clone()
 
@@ -174,10 +174,11 @@ def train(args: Arguments):
                 # hop concatenated with the target nodes
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
+                edge_weights_dev = [w.to(device) for w in edge_weights]
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
                 x = data.x[all_nodes].to(device)
-                logits = gcn_c(x, edge_indices, edge_weights)
+                logits = gcn_c(x, edge_indices, edge_weights_dev)
 
                 local_target_ids = node_map.map(target_nodes)
                 loss_c = loss_fn(logits[local_target_ids],
