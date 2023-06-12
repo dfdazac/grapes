@@ -14,7 +14,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
                                     num_samples: int = -1,
                                     replacement: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
 
@@ -32,7 +32,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     if k >= n:
         # TODO: Test this setting
         return neighbor_nodes, torch.sigmoid(
-            logits.squeeze(-1)).log().sum(), {}
+            logits.squeeze(-1)).log().sum(), torch.ones_like(neighbor_nodes), torch.ones_like(neighbor_nodes), {}
     assert k < n
     assert k > 0
 
@@ -44,8 +44,13 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     min_prob = q_node.min(-1)[0]
     max_prob = q_node.max(-1)[0]
 
+    # count nodes sampled more than once
+    unique_nodes, counts = torch.unique(samples, return_counts=True)
+    non_unique_nodes = unique_nodes[counts > 1]
+    non_unique_counts = counts[counts > 1]
+
     mask = torch.zeros_like(logits.squeeze(), dtype=torch.float)
-    mask[samples] = 1
+    mask[unique_nodes] = 1
 
     neighbor_nodes = neighbor_nodes[mask.bool().cpu()]
 
@@ -53,8 +58,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
                   "max_prob": max_prob,
                   "entropy": entropy,}
 
-
-    return neighbor_nodes, q_node[samples], stats_dict
+    return neighbor_nodes, q_node[samples], non_unique_nodes, non_unique_counts, stats_dict
 
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,

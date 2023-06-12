@@ -17,7 +17,6 @@ from modules.utils import (TensorMap, get_neighborhoods,
                            sample_neighborhoods_from_probs, slice_adjacency,
                            get_logger)
 
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -137,14 +136,15 @@ def train(args: Arguments):
                     gcn_gf_edge_weights = torch.tensor(torch.ones_like(local_neighborhoods[1], dtype=torch.float32))
                     node_logits = gcn_gf(x, local_neighborhoods, gcn_gf_edge_weights)
                     # Select logits for neighbor nodes only
-                    node_logits = node_logits[node_map.map(neighbor_nodes)]
+                    node_logits_gfn = node_logits[node_map.map(neighbor_nodes)]
 
                     # Sample neighbors using the logits
-                    sampled_neighboring_nodes, probs, statistics = sample_neighborhoods_from_probs(
-                        node_logits,
-                        neighbor_nodes,
-                        args.num_samples
-                    )
+                    sampled_neighboring_nodes, probs, non_unique_nodes, non_unique_counts, statistics = \
+                        sample_neighborhoods_from_probs(
+                            node_logits_gfn,
+                            neighbor_nodes,
+                            args.num_samples
+                        )
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
                     log_probs.append(probs.log())
@@ -162,8 +162,15 @@ def train(args: Arguments):
                                                   rows=previous_nodes,
                                                   cols=batch_nodes)
                     global_edge_indices.append(k_hop_edges)
-                    node_weight_temp = torch.cat([torch.ones_like(target_nodes),
-                                                   1/probs.to('cpu')])
+
+                    # get node weight of the nodes samples more than once
+                    multi_sampled_node_weight = torch.ones_like(neighbor_nodes)
+                    multi_sampled_node_weight[non_unique_nodes] = non_unique_counts
+
+                    node_map.update(neighbor_nodes)
+                    node_probs = torch.softmax(node_logits[node_map.map(sampled_neighboring_nodes)], -1)
+                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)/args.num_samples,
+                                                  multi_sampled_node_weight[node_map.map(sampled_neighboring_nodes)] / (args.num_samples*node_probs.to('cpu').squeeze())])
                     node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
                     edge_weights.append(torch.tensor([node_weights_dict[i.item()] for i in k_hop_edges[1]]))
                     # Update the previous_nodes
@@ -174,9 +181,10 @@ def train(args: Arguments):
                 # hop concatenated with the target nodes
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
-                edge_weights_dev = [w.to(device) for w in edge_weights]
-                edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
+                # edge_weights_dev = [w.to(device) for w in edge_weights]
 
+                edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
+                edge_weights_dev = [torch.ones_like(i[0]) for i in edge_indices]
                 x = data.x[all_nodes].to(device)
                 logits = gcn_c(x, edge_indices, edge_weights_dev)
 
@@ -191,7 +199,7 @@ def train(args: Arguments):
                 optimizer_gf.zero_grad()
                 cost_gfn = loss_c.detach()
 
-                loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
+                loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef * cost_gfn) ** 2
                 loss_gfn.backward()
                 optimizer_gf.step()
 
