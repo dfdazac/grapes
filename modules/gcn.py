@@ -49,7 +49,7 @@ class GCN(nn.Module):
             edge_indices, edge_weights = gcn_norm(edges)
             weight = torch.cat((weight, torch.ones(edge_indices.size(1) - edges.size(1), device=weight.device)))
             weight = weight*edge_weights
-            weight = edge_weights
+            # weight = edge_weights
             x = torch.relu(layer(x, edge_indices, weight))
 
         edges = edge_index[0] if layerwise_adjacency else edge_index
@@ -57,7 +57,7 @@ class GCN(nn.Module):
         edge_indices, edge_weights = gcn_norm(edges)
         weight = torch.cat((weight, torch.ones(edge_indices.size(1) - edges.size(1), device=weight.device)))
         weight = weight * edge_weights
-        weight = edge_weights
+        # weight = edge_weights
         logits = self.gcn_layers[-1](x, edge_indices, weight)
 
         return logits
