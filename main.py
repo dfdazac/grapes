@@ -165,12 +165,12 @@ def train(args: Arguments):
 
                     # get node weight of the nodes samples more than once
                     multi_sampled_node_weight = torch.ones_like(neighbor_nodes)
-                    multi_sampled_node_weight[non_unique_nodes] = non_unique_counts
+                    multi_sampled_node_weight[non_unique_nodes] = non_unique_counts.cpu()
 
                     node_map.update(neighbor_nodes)
                     node_probs = torch.softmax(node_logits[node_map.map(sampled_neighboring_nodes)], -1)
 
-                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)*node_probs.mean()/args.num_samples,
+                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)*node_probs.mean().cpu()/args.num_samples,
                                                   multi_sampled_node_weight[node_map.map(sampled_neighboring_nodes)]
                                                   / (args.num_samples*node_probs.to('cpu').squeeze())])
                     node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
