@@ -64,9 +64,9 @@ def train(args: Arguments):
         num_indicators = args.sampling_hops + 1
     else:
         num_indicators = 0
-    gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes]).to(device)
+    gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], normalize=False).to(device)
     gcn_gf = GCN(data.num_features + num_indicators,
-                 hidden_dims=[args.hidden_dim, 1]).to(device)
+                 hidden_dims=[args.hidden_dim, 1], normalize=False).to(device)
     log_z = torch.tensor(args.log_z_init, requires_grad=True)
     optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
@@ -169,8 +169,10 @@ def train(args: Arguments):
 
                     node_map.update(neighbor_nodes)
                     node_probs = torch.softmax(node_logits[node_map.map(sampled_neighboring_nodes)], -1)
-                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)/args.num_samples,
-                                                  multi_sampled_node_weight[node_map.map(sampled_neighboring_nodes)] / (args.num_samples*node_probs.to('cpu').squeeze())])
+
+                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)*node_probs.mean()/args.num_samples,
+                                                  multi_sampled_node_weight[node_map.map(sampled_neighboring_nodes)]
+                                                  / (args.num_samples*node_probs.to('cpu').squeeze())])
                     node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
                     edge_weights.append(torch.tensor([node_weights_dict[i.item()] for i in k_hop_edges[1]]))
                     # Update the previous_nodes
@@ -181,10 +183,9 @@ def train(args: Arguments):
                 # hop concatenated with the target nodes
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
-                # edge_weights_dev = [w.to(device) for w in edge_weights]
+                edge_weights_dev = [w.to(device) for w in edge_weights]
 
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
-                edge_weights_dev = [torch.ones_like(i[0]) for i in edge_indices]
                 x = data.x[all_nodes].to(device)
                 logits = gcn_c(x, edge_indices, edge_weights_dev)
 
