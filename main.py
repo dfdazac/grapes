@@ -25,12 +25,13 @@ class Arguments(Tap):
 
     sampling_hops: int = 2
     num_samples: int = 512
-    sample_with_repalcement: bool = True
+    sample_with_replacement: bool = True
     use_indicators: bool = True
     lr_gf: float = 1e-4
     lr_gc: float = 1e-3
     loss_coef: float = 1e4
     log_z_init: float = 0.
+    multi_sampled_weight: bool = False
 
     hidden_dim: int = 256
     max_epochs: int = 100
@@ -168,9 +169,9 @@ def train(args: Arguments):
                     multi_sampled_node_weight[non_unique_nodes] = non_unique_counts.cpu()
 
                     node_map.update(neighbor_nodes)
-                    node_probs = torch.softmax(node_logits[node_map.map(sampled_neighboring_nodes)], -1)
+                    node_probs = torch.softmax(node_logits[node_map.map(sampled_neighboring_nodes)], 0)
 
-                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)*node_probs.mean().cpu()/args.num_samples,
+                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)/args.num_samples*node_probs.mean().cpu(),
                                                   multi_sampled_node_weight[node_map.map(sampled_neighboring_nodes)]
                                                   / (args.num_samples*node_probs.to('cpu').squeeze())])
                     node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
