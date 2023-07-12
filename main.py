@@ -140,7 +140,7 @@ def train(args: Arguments):
                     node_logits_gfn = node_logits[node_map.map(neighbor_nodes)]
 
                     # Sample neighbors using the logits
-                    sampled_neighboring_nodes, probs, non_unique_nodes, non_unique_counts, statistics = \
+                    sampled_neighboring_nodes, node_probs, sampled_probs, non_unique_nodes, non_unique_counts, statistics = \
                         sample_neighborhoods_from_probs(
                             node_logits_gfn,
                             neighbor_nodes,
@@ -148,7 +148,7 @@ def train(args: Arguments):
                         )
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
-                    log_probs.append(probs.log())
+                    log_probs.append(sampled_probs.log())
                     sampled_sizes.append(sampled_neighboring_nodes.shape[0])
                     neighborhood_sizes.append(neighborhoods.shape[-1])
                     all_statistics.append(statistics)
@@ -169,7 +169,7 @@ def train(args: Arguments):
                     multi_sampled_node_weight[non_unique_nodes] = non_unique_counts.cpu()
 
                     node_map.update(neighbor_nodes)
-                    node_probs = torch.softmax(node_logits[node_map.map(sampled_neighboring_nodes)], 0)
+                    # node_probs = torch.softmax(node_logits[node_map.map(sampled_neighboring_nodes)], 0)
 
                     node_weight_temp = torch.cat([torch.ones_like(target_nodes)/args.num_samples*node_probs.mean().cpu(),
                                                   multi_sampled_node_weight[node_map.map(sampled_neighboring_nodes)]
