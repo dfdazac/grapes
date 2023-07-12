@@ -174,8 +174,16 @@ def train(args: Arguments):
                     node_weight_temp = torch.cat([torch.ones_like(target_nodes)/args.num_samples*node_probs.mean().cpu(),
                                                   multi_sampled_node_weight[node_map.map(sampled_neighboring_nodes)]
                                                   / (args.num_samples*node_probs.to('cpu').squeeze())])
-                    node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
-                    edge_weights.append(torch.tensor([node_weights_dict[i.item()] for i in k_hop_edges[1]]))
+                    # version 1
+                    # node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
+                    # edge_weights.append(torch.tensor([node_weights_dict[i.item()] for i in k_hop_edges[1]]))
+                    # version 2
+                    node_weights = torch.zeros(max(k_hop_edges[1]+1))
+                    # node_weights[batch_nodes] = node_weight_temp
+                    # edge_weights.append(node_weights[k_hop_edges[1]])
+                    # version 3
+                    node_weights1 = node_weights.scatter_(0, batch_nodes, node_weight_temp)
+                    edge_weights.append(torch.gather(node_weights1, 0, k_hop_edges[1]))
                     # Update the previous_nodes
                     previous_nodes = batch_nodes.clone()
 
