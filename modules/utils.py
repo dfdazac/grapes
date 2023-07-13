@@ -41,7 +41,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     q_node = torch.softmax(logits, -1)
     samples = torch.multinomial(q_node, k, replacement=replacement)
 
-    entropy = -(q_node * torch.log(q_node)).sum(-1)
+    entropy = -(q_node * torch.log(q_node+1e-15)).sum(-1)
     min_prob = q_node.min(-1)[0]
     max_prob = q_node.max(-1)[0]
 
