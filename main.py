@@ -178,7 +178,7 @@ def train(args: Arguments):
                     # node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
                     # edge_weights.append(torch.tensor([node_weights_dict[i.item()] for i in k_hop_edges[1]]))
                     # version 2
-                    node_weights = torch.zeros(max(k_hop_edges[1]+1))
+                    node_weights = torch.zeros(batch_nodes.max()+1)
                     # node_weights[batch_nodes] = node_weight_temp
                     # edge_weights.append(node_weights[k_hop_edges[1]])
                     # version 3
