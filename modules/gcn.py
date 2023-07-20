@@ -46,19 +46,18 @@ class GCN(nn.Module):
         for i, layer in enumerate(self.gcn_layers[:-1], start=1):
             edges = edge_index[-i] if layerwise_adjacency else edge_index
             weight = torch.tensor(edge_weight[-i]) if layerwise_adjacency else edge_weight
-            edge_indices, edge_weights = gcn_norm(edges)
-            weight = torch.cat((weight, torch.ones(edge_indices.size(1) - edges.size(1), device=weight.device)))
-            weight = weight*edge_weights
-            # weight = edge_weights
-            x = torch.relu(layer(x, edge_indices, weight))
+            edge_indices, edge_weights = gcn_norm(edges, weight)
+            # weight = torch.cat((weight, torch.ones(edge_indices.size(1) - edges.size(1), device=weight.device)))
+            # weight = weight*edge_weights
+
+            x = torch.relu(layer(x, edge_indices, edge_weights))
 
         edges = edge_index[0] if layerwise_adjacency else edge_index
         weight = torch.tensor(edge_weight[0]) if layerwise_adjacency else edge_weight
-        edge_indices, edge_weights = gcn_norm(edges)
-        weight = torch.cat((weight, torch.ones(edge_indices.size(1) - edges.size(1), device=weight.device)))
-        weight = weight * edge_weights
-        # weight = edge_weights
-        logits = self.gcn_layers[-1](x, edge_indices, weight)
+        edge_indices, edge_weights = gcn_norm(edges, weight)
+        # weight = torch.cat((weight, torch.ones(edge_indices.size(1) - edges.size(1), device=weight.device)))
+        # weight = weight * edge_weights
+        logits = self.gcn_layers[-1](x, edge_indices, edge_weights)
 
         return logits
 
@@ -97,8 +96,8 @@ def gcn_norm(edge_index, edge_weight=None, num_nodes=None, improved=False,
             edge_weight = tmp_edge_weight
 
         row, col = edge_index[0], edge_index[1]
-        idx = col if flow == "source_to_target" else row
+        idx = row if flow == "source_to_target" else row
         deg = scatter_add(edge_weight, idx, dim=0, dim_size=num_nodes)
         deg_inv_sqrt = deg.pow_(-0.5)
         deg_inv_sqrt.masked_fill_(deg_inv_sqrt == float('inf'), 0)
-        return edge_index, deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
+        return edge_index, deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[row]

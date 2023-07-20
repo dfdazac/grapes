@@ -10,17 +10,18 @@ import numpy as np
 from modules.simple import KSubsetDistribution
 
 
-def sample_neighborhoods_from_probs(logits: torch.Tensor,
+def sample_neighborhoods_from_probs(node_probs: torch.Tensor,
+                                    q_node: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
                                     num_samples: int = -1,
                                     replacement: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
 
     Uses Gumbel-max trick to sample from Bernoulli distribution. This is off-policy, since the original input
     distribution is a regular Bernoulli distribution.
-    Args:
+    Args: # TODO: fix the input description
         logits: tensor of shape (N,), where N all the number of unique
             nodes in a batch, containing the probability of dropping the node.
         neighbor_nodes: tensor containing global node identifiers of the neighbors nodes
@@ -29,28 +30,25 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
 
     k = num_samples
     n = neighbor_nodes.shape[0]
-    if k >= n:
+    if k >= n and replacement == False:
         # TODO: Test this setting
-        return neighbor_nodes, torch.sigmoid(
-            logits.squeeze(-1)).log().sum(), torch.sigmoid(logits.squeeze(-1)).log().sum(),\
-               torch.ones_like(neighbor_nodes), torch.ones_like(neighbor_nodes), {}
-    assert k < n
+        return neighbor_nodes, q_node,\
+               torch.range(0, n-1, dtype=torch.long), torch.ones_like(neighbor_nodes), {}
+    # assert k < n
     assert k > 0
 
-    logits = logits.squeeze()
-    q_node = torch.softmax(logits, -1)
     samples = torch.multinomial(q_node, k, replacement=replacement)
 
-    entropy = -(q_node * torch.log(q_node+1e-15)).sum(-1)
-    min_prob = q_node.min(-1)[0]
-    max_prob = q_node.max(-1)[0]
+    entropy = -(node_probs * torch.log(node_probs+1e-15)).sum(-1)
+    min_prob = node_probs.min(-1)[0]
+    max_prob = node_probs.max(-1)[0]
 
     # count nodes sampled more than once
     unique_nodes, counts = torch.unique(samples, return_counts=True)
     non_unique_nodes = unique_nodes[counts > 1]
     non_unique_counts = counts[counts > 1]
 
-    mask = torch.zeros_like(logits.squeeze(), dtype=torch.float)
+    mask = torch.zeros_like(q_node, dtype=torch.float)
     mask[unique_nodes] = 1
 
     neighbor_nodes = neighbor_nodes[mask.bool().cpu()]
@@ -59,7 +57,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
                   "max_prob": max_prob,
                   "entropy": entropy,}
 
-    return neighbor_nodes, q_node[mask.bool().cpu()], q_node[samples], non_unique_nodes, non_unique_counts, stats_dict
+    return neighbor_nodes, q_node[samples], non_unique_nodes, non_unique_counts, stats_dict
 
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,
