@@ -11,6 +11,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from torch_geometric.datasets import Planetoid, Reddit
 from tqdm import tqdm
+from torch.distributions import Bernoulli
 
 from modules.gcn import GCN
 from modules.utils import (TensorMap, get_neighborhoods,
@@ -331,10 +332,6 @@ def evaluate(gcn_c: torch.nn.Module,
             indicator_features[target_nodes, -1] = 1.0
 
             global_edge_indices = []
-            log_probs = []
-            sampled_sizes = []
-            neighborhood_sizes = []
-            all_statistics = []
 
             # Sample neighborhoods with the GCN-GF model
             for hop in range(args.sampling_hops):
@@ -370,18 +367,14 @@ def evaluate(gcn_c: torch.nn.Module,
                 # Select logits for neighbor nodes only
                 node_logits = node_logits[node_map.map(neighbor_nodes)]
 
-                # Sample neighbors using the logits
-                sampled_neighboring_nodes, log_prob, statistics = sample_neighborhoods_from_probs(
-                    node_logits,
-                    neighbor_nodes,
-                    args.num_samples
-                )
-                all_nodes_mask[sampled_neighboring_nodes] = True
+                # Sample top k neighbors using the logits
+                b = Bernoulli(logits=node_logits.squeeze())
+                samples = torch.topk(b.probs, k=args.num_samples, dim=0, sorted=False)[1]
+                sample_mask = torch.zeros_like(node_logits.squeeze(), dtype=torch.float)
+                sample_mask[samples] = 1
+                sampled_neighboring_nodes = neighbor_nodes[sample_mask.bool().cpu()]
 
-                log_probs.append(log_prob)
-                sampled_sizes.append(sampled_neighboring_nodes.shape[0])
-                neighborhood_sizes.append(neighborhoods.shape[-1])
-                all_statistics.append(statistics)
+                all_nodes_mask[sampled_neighboring_nodes] = True
 
                 # Update batch nodes for next hop
                 batch_nodes = torch.cat([target_nodes,
