@@ -297,11 +297,13 @@ def evaluate(gcn_c: torch.nn.Module,
         x = x.cpu()
         edge_index = edge_index.cpu()
         gcn_c = gcn_c.cpu()
+        all_predictions = torch.tensor([], dtype=torch.long, device='cpu')
     else:
         # move data to GPU
         x = x.to(device)
         edge_index = edge_index.to(device)
         gcn_c = gcn_c.to(device)
+        all_predictions = torch.tensor([], dtype=torch.long, device='cuda')
 
     if full_batch:
         # perform full batch message passing for evaluation
@@ -318,8 +320,6 @@ def evaluate(gcn_c: torch.nn.Module,
         prev_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
         batch_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
         indicator_features = torch.zeros((data.num_nodes, num_indicators))
-
-        all_predictions = torch.tensor([], dtype=torch.long, device=device)
 
         for batch_id, batch in enumerate(loader):
             target_nodes = batch[0]
