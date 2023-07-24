@@ -319,7 +319,7 @@ def evaluate(gcn_c: torch.nn.Module,
         batch_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
         indicator_features = torch.zeros((data.num_nodes, num_indicators))
 
-        all_predictions = torch.tensor([], dtype=torch.long)
+        all_predictions = torch.tensor([], dtype=torch.long, device=device)
 
         for batch_id, batch in enumerate(loader):
             target_nodes = batch[0]
