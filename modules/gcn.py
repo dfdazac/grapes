@@ -39,14 +39,15 @@ class GCN(nn.Module):
     def forward(self,
                 x: torch.Tensor,
                 edge_index: Union[torch.Tensor, list[torch.Tensor]],
-                edge_weight: Union[torch.Tensor, list[torch.Tensor]]
+                edge_weight: Union[torch.Tensor, list[torch.Tensor]],
+                add_self_loops: bool
                 ) -> torch.Tensor:
         layerwise_adjacency = type(edge_index) == list
 
         for i, layer in enumerate(self.gcn_layers[:-1], start=1):
             edges = edge_index[-i] if layerwise_adjacency else edge_index
             weight = torch.tensor(edge_weight[-i]) if layerwise_adjacency else edge_weight
-            edge_indices, edge_weights = gcn_norm(edges, weight)
+            edge_indices, edge_weights = gcn_norm(edges, weight, add_self_loops=add_self_loops)
             # weight = torch.cat((weight, torch.ones(edge_indices.size(1) - edges.size(1), device=weight.device)))
             # weight = weight*edge_weights
 
@@ -54,7 +55,7 @@ class GCN(nn.Module):
 
         edges = edge_index[0] if layerwise_adjacency else edge_index
         weight = torch.tensor(edge_weight[0]) if layerwise_adjacency else edge_weight
-        edge_indices, edge_weights = gcn_norm(edges, weight)
+        edge_indices, edge_weights = gcn_norm(edges, weight, add_self_loops=add_self_loops)
         # weight = torch.cat((weight, torch.ones(edge_indices.size(1) - edges.size(1), device=weight.device)))
         # weight = weight * edge_weights
         logits = self.gcn_layers[-1](x, edge_indices, edge_weights)
@@ -63,7 +64,7 @@ class GCN(nn.Module):
 
 
 def gcn_norm(edge_index, edge_weight=None, num_nodes=None, improved=False,
-             add_self_loops=True, flow="source_to_target", dtype=None):
+             add_self_loops=None, flow="source_to_target", dtype=None):
 
     fill_value = 2. if improved else 1.
 

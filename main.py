@@ -10,6 +10,7 @@ from tap import Tap
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from torch_geometric.datasets import Planetoid, Reddit
+from torch_geometric.utils import add_remaining_self_loops
 from tqdm import tqdm
 
 from modules.gcn import GCN
@@ -38,6 +39,7 @@ class Arguments(Tap):
     batch_size: int = 512
     eval_frequency: int = 5
     eval_on_cpu: bool = False
+    add_self_loops: bool = True
 
     notes: str = None
     log_wandb: bool = True
@@ -135,7 +137,7 @@ def train(args: Arguments):
 
                     # Get probabilities for sampling each node
                     gcn_gf_edge_weights = torch.tensor(torch.ones_like(local_neighborhoods[1], dtype=torch.float32))
-                    node_logits = gcn_gf(x, local_neighborhoods, gcn_gf_edge_weights)
+                    node_logits = gcn_gf(x, local_neighborhoods, gcn_gf_edge_weights, add_self_loops=True)
                     # get all nodes' probability of being sampled
                     node_logits = node_logits.squeeze()
                     node_probs = torch.softmax(node_logits, -1)
@@ -169,7 +171,7 @@ def train(args: Arguments):
                     k_hop_edges = slice_adjacency(adjacency,
                                                   rows=previous_nodes,
                                                   cols=batch_nodes)
-                    global_edge_indices.append(k_hop_edges)
+
 
                     # get node weight of the nodes samples more than once
 
@@ -184,7 +186,11 @@ def train(args: Arguments):
                                                   / (neighbor_probs[node_map.map(
                                                       sampled_neighboring_nodes)].to('cpu').squeeze())])
 
+                    if args.add_self_loops:
+                        k_hop_edges_loop = torch.stack([torch.cat([k_hop_edges[0], batch_nodes]),
+                                                        torch.cat([k_hop_edges[1], batch_nodes])])
 
+                    global_edge_indices.append(k_hop_edges_loop)
                     # version 1
                     # node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
                     # edge_weights.append(torch.tensor([node_weights_dict[i.item()] for i in k_hop_edges[1]]))
@@ -194,7 +200,7 @@ def train(args: Arguments):
                     # edge_weights.append(node_weights[k_hop_edges[1]])
                     # version 3
                     node_weights1 = node_weights.scatter_(0, batch_nodes, node_weight_temp)
-                    edge_weights.append(torch.gather(node_weights1, 0, k_hop_edges[1]))
+                    edge_weights.append(torch.gather(node_weights1, 0, k_hop_edges_loop[1]))
                     # Update the previous_nodes
                     previous_nodes = batch_nodes.clone()
 
@@ -207,7 +213,7 @@ def train(args: Arguments):
 
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
                 x = data.x[all_nodes].to(device)
-                logits = gcn_c(x, edge_indices, edge_weights_dev)
+                logits = gcn_c(x, edge_indices, edge_weights_dev, add_self_loops=False)
 
                 local_target_ids = node_map.map(target_nodes)
                 loss_c = loss_fn(logits[local_target_ids],
@@ -296,7 +302,7 @@ def evaluate(model,
 
     # perform full batch message passing for evaluation
     eval_edge_weights = torch.tensor(torch.ones_like(edge_index[1], dtype=torch.float32))
-    logits_total = model(x, edge_index, eval_edge_weights)
+    logits_total = model(x, edge_index, eval_edge_weights, add_self_loops=True)
 
     predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
     targets = data.y[mask]
