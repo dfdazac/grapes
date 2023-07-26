@@ -100,5 +100,5 @@ def gcn_norm(edge_index, edge_weight=None, num_nodes=None, improved=False,
         idx = row if flow == "source_to_target" else row
         deg = scatter_add(edge_weight, idx, dim=0, dim_size=num_nodes)
         deg_inv_sqrt = deg.pow_(-0.5)
-        deg_inv_sqrt.masked_fill_(deg_inv_sqrt == float('inf'), 0)
+        deg_inv_sqrt.masked_fill_(deg_inv_sqrt == float('inf'), 1e-7)
         return edge_index, deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[row]
