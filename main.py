@@ -181,7 +181,7 @@ def train(args: Arguments):
                     node_map.update(neighbor_nodes)
                     # node_probs = torch.softmax(node_logits[node_map.map(sampled_neighboring_nodes)], 0)
 
-                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)/(target_probs),
+                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)/(target_probs).to('cpu'),
                                                   multi_sampled_node_weight[node_map.map(sampled_neighboring_nodes)]
                                                   / (neighbor_probs[node_map.map(
                                                       sampled_neighboring_nodes)].to('cpu').squeeze())])
