@@ -33,6 +33,7 @@ class Arguments(Tap):
     loss_coef: float = 1e4
     log_z_init: float = 0.
     multi_sampled_weight: bool = False
+    include_target: bool = False
 
     hidden_dim: int = 256
     max_epochs: int = 100
@@ -116,7 +117,10 @@ def train(args: Arguments):
                     batch_nodes_mask.zero_()
                     prev_nodes_mask[previous_nodes] = True
                     batch_nodes_mask[neighborhoods.view(-1)] = True
-                    neighbor_nodes_mask = batch_nodes_mask & ~prev_nodes_mask
+                    if args.include_target:
+                        neighbor_nodes_mask = batch_nodes_mask & ~prev_nodes_mask
+                    else:
+                        neighbor_nodes_mask = batch_nodes_mask
 
                     batch_nodes = node_map.values[batch_nodes_mask]
                     neighbor_nodes = node_map.values[neighbor_nodes_mask]
@@ -143,8 +147,9 @@ def train(args: Arguments):
                     node_probs = torch.softmax(node_logits, -1)
                     # get probs for neighbor nodes and target nodes separately
                     neighbor_probs = node_probs[node_map.map(neighbor_nodes)]
-                    target_probs = node_probs[node_map.map(target_nodes)]
-
+                    previous_probs = node_probs[node_map.map(previous_nodes)]
+                    print("node_probs_sum", node_probs.sum())
+                    print("neighbor_probs_sum", neighbor_probs.sum())
                     # Sample neighbors using the logits
                     sampled_neighboring_nodes, sampled_probs, non_unique_nodes, non_unique_counts, statistics = \
                         sample_neighborhoods_from_probs(
@@ -163,9 +168,12 @@ def train(args: Arguments):
                     all_statistics.append(statistics)
 
                     # Update batch nodes for next hop
-                    batch_nodes = torch.cat([target_nodes,
-                                             sampled_neighboring_nodes],
-                                            dim=0)
+                    if args.include_target:
+                        batch_nodes = torch.cat([target_nodes,
+                                                 sampled_neighboring_nodes],
+                                                    dim=0)
+                    else:
+                        batch_nodes = sampled_neighboring_nodes
 
                     # Retrieve the edge index that results after sampling
                     k_hop_edges = slice_adjacency(adjacency,
@@ -181,25 +189,27 @@ def train(args: Arguments):
                     node_map.update(neighbor_nodes)
                     # node_probs = torch.softmax(node_logits[node_map.map(sampled_neighboring_nodes)], 0)
 
-                    node_weight_temp = torch.cat([torch.ones_like(target_nodes)/(target_probs).to('cpu'),
+                    node_weight_temp = torch.cat([torch.ones_like(previous_nodes)/(previous_probs).to('cpu'),
                                                   multi_sampled_node_weight[node_map.map(sampled_neighboring_nodes)]
                                                   / (neighbor_probs[node_map.map(
                                                       sampled_neighboring_nodes)].to('cpu').squeeze())])
 
                     if args.add_self_loops:
-                        k_hop_edges_loop = torch.stack([torch.cat([k_hop_edges[0], batch_nodes]),
-                                                        torch.cat([k_hop_edges[1], batch_nodes])])
+                        k_hop_edges_loop = torch.stack([torch.cat([k_hop_edges[0], previous_nodes, sampled_neighboring_nodes]),
+                                                        torch.cat([k_hop_edges[1], previous_nodes, sampled_neighboring_nodes])])
 
                     global_edge_indices.append(k_hop_edges_loop)
                     # version 1
                     # node_weights_dict = {k.item(): v for k, v in zip(batch_nodes, node_weight_temp.detach())}
                     # edge_weights.append(torch.tensor([node_weights_dict[i.item()] for i in k_hop_edges[1]]))
                     # version 2
-                    node_weights = torch.zeros(batch_nodes.max()+1)
+                    # batch_and_target = torch.cat([previous_nodes, sampled_neighboring_nodes])
+                    node_weights = torch.zeros(torch.cat([previous_nodes, sampled_neighboring_nodes]).max()+1)
                     # node_weights[batch_nodes] = node_weight_temp
                     # edge_weights.append(node_weights[k_hop_edges[1]])
                     # version 3
-                    node_weights1 = node_weights.scatter_(0, batch_nodes, node_weight_temp)
+                    node_weights1 = node_weights.scatter_(0, torch.cat([previous_nodes, sampled_neighboring_nodes])
+                                                          , node_weight_temp)
                     edge_weights.append(torch.gather(node_weights1, 0, k_hop_edges_loop[1]))
                     # Update the previous_nodes
                     previous_nodes = batch_nodes.clone()
