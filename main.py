@@ -247,7 +247,8 @@ def train(args: Arguments):
                 wandb.log({'batch_loss_gfn': batch_loss_gfn,
                            'batch_loss_c': batch_loss_c,
                            'log_z': log_z,
-                           '-log_probs': -torch.sum(torch.cat(log_probs, dim=0))})
+                           '-log_probs': -torch.sum(torch.cat(log_probs, dim=0)),
+                           'log_probs+alpha*R': torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef * cost_gfn})
 
                 acc_loss_gfn += batch_loss_gfn / len(loader)
                 acc_loss_c += batch_loss_c / len(loader)
