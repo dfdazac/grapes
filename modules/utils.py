@@ -12,6 +12,7 @@ from modules.simple import KSubsetDistribution
 
 def sample_neighborhoods_from_probs(node_probs: torch.Tensor,
                                     q_node: torch.Tensor,
+                                    node_logits: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
                                     num_samples: int = -1,
                                     replacement: bool = True,
@@ -57,7 +58,8 @@ def sample_neighborhoods_from_probs(node_probs: torch.Tensor,
                   "max_prob": max_prob,
                   "entropy": entropy,}
 
-    return neighbor_nodes, q_node[samples], non_unique_nodes, non_unique_counts, stats_dict
+    b = Bernoulli(logits=node_logits.squeeze())
+    return neighbor_nodes, b.log_prob(mask), non_unique_nodes, non_unique_counts, stats_dict
 
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,

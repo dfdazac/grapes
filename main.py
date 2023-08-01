@@ -151,17 +151,18 @@ def train(args: Arguments):
                     print("node_probs_sum", node_probs.sum())
                     print("neighbor_probs_sum", neighbor_probs.sum())
                     # Sample neighbors using the logits
-                    sampled_neighboring_nodes, sampled_probs, non_unique_nodes, non_unique_counts, statistics = \
+                    sampled_neighboring_nodes, sampled_logs, non_unique_nodes, non_unique_counts, statistics = \
                         sample_neighborhoods_from_probs(
                             node_probs,
                             neighbor_probs,
+                            node_logits,
                             neighbor_nodes,
                             args.num_samples,
                             args.sample_with_replacement
                         )
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
-                    log_probs.append(sampled_probs.log())
+                    log_probs.append(sampled_logs)
 
                     sampled_sizes.append(sampled_neighboring_nodes.shape[0])
                     neighborhood_sizes.append(neighborhoods.shape[-1])
