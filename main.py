@@ -59,7 +59,7 @@ def train(args: Arguments):
         dataset = Reddit(path)
         data = dataset[0]
     else:
-        data = Planetoid(root='data/Planetoid', name=args.dataset)[0]
+        data = Planetoid(root='data/Planetoid', name=args.dataset, split='full')[0]
 
     num_classes = len(data.y.unique())
     node_map = TensorMap(size=data.num_nodes)
