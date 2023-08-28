@@ -17,6 +17,7 @@ from modules.gcn import GCN
 from modules.utils import (TensorMap, get_neighborhoods,
                            sample_neighborhoods_from_probs, slice_adjacency,
                            get_logger)
+from modules.data import get_data, get_ppi
 import argparse
 import torch_geometric
 
@@ -55,14 +56,14 @@ def train(args: Arguments):
                notes=args.notes)
     logger = get_logger()
 
-    if args.dataset == 'reddit':
-        path = os.path.join(os.getcwd(), 'data', 'Reddit')
-        dataset = Reddit(path)
-        data = dataset[0]
-    else:
-        data = Planetoid(root='data/Planetoid', name=args.dataset, split='full')[0]
+    path = os.path.join(os.getcwd(), 'data', args.dataset)
+    data, num_features, num_classes = get_data(root=path, name=args.dataset)
 
-    num_classes = len(data.y.unique())
+    if args.dataset == 'ppi':
+        # PPI is inductive, it has separate datasets for each split.
+        val_data, _, _ = get_ppi(path, split='val')
+        test_data, _, _ = get_ppi(path, split='test')
+
     node_map = TensorMap(size=data.num_nodes)
 
     if args.use_indicators:
@@ -77,7 +78,11 @@ def train(args: Arguments):
     log_z = torch.tensor(args.log_z_init, requires_grad=True)
     optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
-    loss_fn = nn.CrossEntropyLoss()
+
+    if data.y.dim() == 1:
+        loss_fn = nn.CrossEntropyLoss()
+    else:
+        loss_fn = nn.BCEWithLogitsLoss()
 
     train_idx = data.train_mask.nonzero().squeeze(1)
     train_loader = DataLoader(TensorDataset(train_idx), batch_size=args.batch_size)

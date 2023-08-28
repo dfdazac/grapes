@@ -150,6 +150,7 @@ def get_logger():
 
     return logger
 
+
 def row_normalize(mx):
     """Row-normalize sparse matrix"""
     rowsum = np.array(mx.sum(1))
@@ -159,3 +160,33 @@ def row_normalize(mx):
 
     mx = r_mat_inv.dot(mx)
     return mx
+
+
+# From PyGAS, PyTorch Geometric Auto-Scale: https://github.com/rusty1s/pyg_autoscale/tree/master
+def index2mask(idx: Tensor, size: int) -> Tensor:
+    mask = torch.zeros(size, dtype=torch.bool, device=idx.device)
+    mask[idx] = True
+    return mask
+
+
+def gen_masks(y: Tensor, train_per_class: int = 20, val_per_class: int = 30,
+              num_splits: int = 20) -> Tuple[Tensor, Tensor, Tensor]:
+    num_classes = int(y.max()) + 1
+
+    train_mask = torch.zeros(y.size(0), num_splits, dtype=torch.bool)
+    val_mask = torch.zeros(y.size(0), num_splits, dtype=torch.bool)
+
+    for c in range(num_classes):
+        idx = (y == c).nonzero(as_tuple=False).view(-1)
+        perm = torch.stack(
+            [torch.randperm(idx.size(0)) for _ in range(num_splits)], dim=1)
+        idx = idx[perm]
+
+        train_idx = idx[:train_per_class]
+        train_mask.scatter_(0, train_idx, True)
+        val_idx = idx[train_per_class:train_per_class + val_per_class]
+        val_mask.scatter_(0, val_idx, True)
+
+    test_mask = ~(train_mask | val_mask)
+
+    return train_mask, val_mask, test_mask
