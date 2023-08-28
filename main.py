@@ -34,6 +34,7 @@ class Arguments(Tap):
     lr_gc: float = 1e-3
     loss_coef: float = 1e4
     log_z_init: float = 0.
+    reg_param: float = 0.
 
     hidden_dim: int = 256
     max_epochs: int = 100
@@ -189,7 +190,7 @@ def train(args: Arguments):
 
                 local_target_ids = node_map.map(target_nodes)
                 loss_c = loss_fn(logits[local_target_ids],
-                                 data.y[target_nodes].to(device))
+                                 data.y[target_nodes].to(device)) + args.reg_param*torch.sum(torch.var(logits, dim=1))
 
                 optimizer_c.zero_grad()
                 loss_c.backward()
