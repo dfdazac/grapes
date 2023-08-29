@@ -13,7 +13,7 @@ from torch_geometric.datasets import Planetoid, Reddit
 from tqdm import tqdm
 from torch.distributions import Bernoulli
 
-from modules.gcn import GCN
+from modules.gcn import GCN, GAT, GCN2
 from modules.utils import (TensorMap, get_neighborhoods,
                            sample_neighborhoods_from_probs, slice_adjacency,
                            get_logger)
@@ -37,8 +37,9 @@ class Arguments(Tap):
     log_z_init: float = 0.
     reg_param: float = 0.
 
+    model_type: str = 'gcn'
     hidden_dim: int = 256
-    max_epochs: int = 100
+    max_epochs: int = 30
     batch_size: int = 512
     eval_frequency: int = 5
     eval_on_cpu: bool = False
@@ -70,11 +71,19 @@ def train(args: Arguments):
         num_indicators = args.sampling_hops + 1
     else:
         num_indicators = 0
-    # GCN model  for classification
-    gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes]).to(device)
-    # GCN model for GFlotNet sampling
-    gcn_gf = GCN(data.num_features + num_indicators,
-                 hidden_dims=[args.hidden_dim, 1]).to(device)
+
+    if args.model_type == 'gcn2':
+        # GCN model  for classification
+        gcn_c = GCN2(data.num_features, hidden_dims=[args.hidden_dim, num_classes], alpha=0.1, theta=0.5).to(device)
+        # GCN model for GFlotNet sampling
+        gcn_gf = GCN2(data.num_features + num_indicators,
+                    hidden_dims=[args.hidden_dim, 1], alpha=0.1, theta=0.5).to(device)
+    elif args.model_type == 'gcn':
+        gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes]).to(device)
+        # GCN model for GFlotNet sampling
+        gcn_gf = GCN(data.num_features + num_indicators,
+                      hidden_dims=[args.hidden_dim, 1]).to(device)
+
     log_z = torch.tensor(args.log_z_init, requires_grad=True)
     optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
