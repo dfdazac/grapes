@@ -324,10 +324,27 @@ def evaluate(gcn_c: torch.nn.Module,
         # perform full batch message passing for evaluation
         logits_total = gcn_c(x, edge_index)
 
-        predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
-        targets = data.y[mask]
-        accuracy = accuracy_score(targets, predictions)
-        f1 = f1_score(targets, predictions, average='micro')
+        logits_total = gcn_c(x, edge_index)
+        if data.y[mask].dim == 1:
+            predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
+            targets = data.y[mask]
+            accuracy = accuracy_score(targets, predictions)
+            f1 = f1_score(targets, predictions, average='micro')
+        # multilabel classification
+        else:
+            y_pred = logits_total > 0
+            y_true = data.y[mask] > 0.5
+
+            tp = int((y_true & y_pred).sum())
+            fp = int((~y_true & y_pred).sum())
+            fn = int((y_true & ~y_pred).sum())
+
+            try:
+                precision = tp / (tp + fp)
+                recall = tp / (tp + fn)
+                f1 = accuracy = 2 * (precision * recall) / (precision + recall)
+            except ZeroDivisionError:
+                f1 = 0.
     else:
         # perform mini-batch message passing for evaluation
         assert loader is not None, 'loader must be provided if full_batch is False'
