@@ -322,7 +322,6 @@ def evaluate(gcn_c: torch.nn.Module,
 
     if full_batch:
         # perform full batch message passing for evaluation
-        logits_total = gcn_c(x, edge_index)
 
         logits_total = gcn_c(x, edge_index)
         if data.y[mask].dim == 1:
@@ -332,7 +331,7 @@ def evaluate(gcn_c: torch.nn.Module,
             f1 = f1_score(targets, predictions, average='micro')
         # multilabel classification
         else:
-            y_pred = logits_total > 0
+            y_pred = logits_total[mask] > 0
             y_true = data.y[mask] > 0.5
 
             tp = int((y_true & y_pred).sum())
