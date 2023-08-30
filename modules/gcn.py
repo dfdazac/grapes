@@ -3,7 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, GATConv, GCN2Conv, Linear
+from torch_geometric.nn import GCNConv, GATConv, GCN2Conv, Linear, MessagePassing, PNAConv
 
 
 class GCN(nn.Module):
@@ -110,3 +110,36 @@ class GCN2(nn.Module):
         logits = self.lins[1](x)
 
         return logits
+
+
+class PNA(nn.Module):
+    def __init__(self, in_features: int, hidden_dims: list[int],
+                 aggregators: list[str], scalers: list[str], deg: torch.Tensor, dropout: float = 0.0,
+                 drop_input: bool = True, batch_norm: bool = False,
+                 residual: bool = False, device=None):
+        super(PNA, self).__init__()
+
+        dims = [in_features] + hidden_dims
+        self.conv = nn.ModuleList()
+        for i in range(len(hidden_dims)):
+            conv = PNAConv(in_channels=dims[i], out_channels=dims[i+1],aggregators=aggregators,
+                           scalers=scalers, deg=deg)
+            self.conv.append(conv)
+
+        self.lins = Linear(in_features, hidden_dims[-1])
+
+    def forward(self, x: torch.Tensor, edge_index: Union[torch.Tensor, list[torch.Tensor]],
+                *args) -> torch.Tensor:
+        layerwise_adjacency = type(edge_index) == list
+        if self.drop_input:
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        for i, layer in enumerate(self.conv[:-1], start=1):
+            edges = edge_index[-i] if layerwise_adjacency else edge_index
+            x = self.lins(x) # not sure!
+            x = torch.relu(layer(x, edges))
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        x = self.convs[-1](x,edge_index[-1])
+        return x
+
