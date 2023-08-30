@@ -324,7 +324,7 @@ def evaluate(gcn_c: torch.nn.Module,
         # perform full batch message passing for evaluation
 
         logits_total = gcn_c(x, edge_index)
-        if data.y[mask].dim == 1:
+        if data.y[mask].dim() == 1:
             predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
             targets = data.y[mask]
             accuracy = accuracy_score(targets, predictions)
