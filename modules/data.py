@@ -46,10 +46,10 @@ def get_amazon(root: str, name: str) -> Tuple[Data, int, int]:
 
 
 def get_arxiv(root: str) -> Tuple[Data, int, int]:
-    dataset = PygNodePropPredDataset('ogbn-arxiv', f'{root}/OGB',
-                                     pre_transform=T.ToSparseTensor())
+    dataset = PygNodePropPredDataset('ogbn-arxiv', f'{root}/OGB')#,
+                                     #pre_transform=T.ToSparseTensor())
     data = dataset[0]
-    data.adj_t = data.adj_t.to_symmetric()
+    #data.adj_t = data.adj_t.to_symmetric()
     data.node_year = None
     data.y = data.y.view(-1)
     split_idx = dataset.get_idx_split()
