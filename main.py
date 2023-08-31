@@ -36,6 +36,7 @@ class Arguments(Tap):
     loss_coef: float = 1e4
     log_z_init: float = 0.
     reg_param: float = 0.
+    dropout: float = 0.
 
     model_type: str = 'gcn'
     hidden_dim: int = 256
@@ -79,7 +80,7 @@ def train(args: Arguments):
         gcn_gf = GCN2(data.num_features + num_indicators,
                     hidden_dims=[args.hidden_dim, 1], alpha=0.1, theta=0.5).to(device)
     elif args.model_type == 'gcn':
-        gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes]).to(device)
+        gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], dropout=args.dropout).to(device)
         # GCN model for GFlotNet sampling
         gcn_gf = GCN(data.num_features + num_indicators,
                       hidden_dims=[args.hidden_dim, 1]).to(device)

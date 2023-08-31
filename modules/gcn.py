@@ -9,9 +9,9 @@ from torch_geometric.nn import GCNConv, GATConv, GCN2Conv, Linear, MessagePassin
 class GCN(nn.Module):
     def __init__(self,
                  in_features: int,
-                 hidden_dims: list[int]):
+                 hidden_dims: list[int], dropout: float=0.):
         super(GCN, self).__init__()
-
+        self.dropout = dropout
         dims = [in_features] + hidden_dims
         gcn_layers = []
         for i in range(len(hidden_dims) - 1):
@@ -30,9 +30,14 @@ class GCN(nn.Module):
         for i, layer in enumerate(self.gcn_layers[:-1], start=1):
             edges = edge_index[-i] if layerwise_adjacency else edge_index
             x = torch.relu(layer(x, edges))
+            x = F.dropout(x, p=self.dropout, training=self.training)
 
         edges = edge_index[0] if layerwise_adjacency else edge_index
         logits = self.gcn_layers[-1](x, edges)
+        logits = F.dropout(logits, p=self.dropout, training=self.training)
+
+        #torch.cuda.synchronize()
+        #print("allocated gcn: %.2f MB" % (torch.cuda.memory_allocated() / 1024 / 1024), flush=True)
 
         return logits
 
