@@ -1,0 +1,20 @@
+{
+  "batch_size": 256,
+  "dataset": "yelp",
+  "eval_frequency": 10,
+  "eval_full_batch": true,
+  "eval_on_cpu": true,
+  "hidden_dim": 512,
+  "log_wandb": true,
+  "log_z_init": 0.0,
+  "loss_coef": 1853.734920420718,
+  "lr_gc": 0.00003700288199588882,
+  "lr_gf": 0.0009102048377587572,
+  "max_epochs": 100,
+  "model_type": "gcn",
+  "num_samples": 256,
+  "reg_param": 0.0,
+  "sampling_hops": 2,
+  "use_indicators": true,
+  "dropout": 0.0
+}

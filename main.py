@@ -20,7 +20,7 @@ from modules.utils import (TensorMap, get_neighborhoods,
 from modules.data import get_data, get_ppi
 import argparse
 import torch_geometric
-
+import argparse
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -442,4 +442,7 @@ def evaluate(gcn_c: torch.nn.Module,
     return accuracy, f1
 
 
-train(Arguments(explicit_bool=True).parse_args())
+parser = argparse.ArgumentParser(description="argument for GFGS")
+parser.add_argument("--configs", required=True, type=str)
+input_args = parser.parse_args()
+train(Arguments(explicit_bool=True).load(input_args.configs))
