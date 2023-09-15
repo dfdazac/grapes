@@ -5,16 +5,16 @@
   "eval_full_batch": true,
   "eval_on_cpu": true,
   "hidden_dim": 512,
-  "log_wandb": true,
-  "log_z_init": 0,
+  "log_wandb": false,
+  "log_z_init": 0.0,
   "loss_coef": 3929.307347735502,
   "lr_gc": 0.0006243445910406752,
   "lr_gf": 0.00000877875936155424,
   "max_epochs": 50,
   "model_type": "gcn",
   "num_samples": 256,
-  "reg_param": 0,
+  "reg_param": 0.0,
   "sampling_hops": 2,
   "use_indicators": true,
-  "dropout": 0
+  "dropout": 0.0
 }

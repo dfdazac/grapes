@@ -284,6 +284,7 @@ def train(args: Arguments):
                'test_f1': test_f1})
     logger.info(f'test_accuracy={test_accuracy:.3f}, '
                 f'test_f1={test_f1:.3f}')
+    return test_f1
 
 
 @torch.inference_mode()
@@ -444,5 +445,11 @@ def evaluate(gcn_c: torch.nn.Module,
 
 parser = argparse.ArgumentParser(description="argument for GFGS")
 parser.add_argument("--configs", required=True, type=str)
+parser.add_argument("--runs", default=10, type=int)
 input_args = parser.parse_args()
-train(Arguments(explicit_bool=True).load(input_args.configs))
+results = torch.empty(input_args.runs)
+for r in range(input_args.runs):
+    test_f1 = train(Arguments(explicit_bool=True).load(input_args.configs))
+    results[r] = test_f1
+
+print(f'Acc: {100 * results.mean():.2f} ± {100 * results.std():.2f}')
