@@ -5,7 +5,7 @@
   "eval_full_batch": true,
   "eval_on_cpu": true,
   "hidden_dim": 512,
-  "log_wandb": false,
+  "log_wandb": true,
   "log_z_init": 0.0,
   "loss_coef": 3929.307347735502,
   "lr_gc": 0.0006243445910406752,
