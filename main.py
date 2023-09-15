@@ -21,6 +21,7 @@ from modules.data import get_data, get_ppi
 import argparse
 import torch_geometric
 import argparse
+import json
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -48,6 +49,37 @@ class Arguments(Tap):
 
     notes: str = None
     log_wandb: bool = True
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="argument for GFGS")
+    parser.add_argument("--configs", required=True, type=str, help="Path to JSON configuration file")
+    parser.add_argument("--runs", default=10, type=int)
+    parser.add_argument("--num_samples", default=256, type=int)
+    return parser.parse_args()
+
+
+def load_configurations(config_file, command_line_args):
+    # Load configurations from JSON file
+    with open(config_file, 'r') as file:
+        config_data = json.load(file)
+
+    # # Create an instance of Arguments with default values
+    # merged_args = Arguments()
+    #
+    # # Update the instance with values from the JSON file
+    # for key, value in config_data.items():
+    #     setattr(merged_args, key, value)
+    #
+    # # Update the instance with values from the command line arguments
+    # for key, value in vars(command_line_args).items():
+    #     setattr(merged_args, key, value)
+
+    # Merge JSON configurations with command line arguments
+    merged_args = Arguments(**config_data, **vars(command_line_args))
+
+
+    return merged_args
 
 
 def train(args: Arguments):
@@ -443,13 +475,12 @@ def evaluate(gcn_c: torch.nn.Module,
     return accuracy, f1
 
 
-parser = argparse.ArgumentParser(description="argument for GFGS")
-parser.add_argument("--configs", required=True, type=str)
-parser.add_argument("--runs", default=10, type=int)
-input_args = parser.parse_args()
+input_args = parse_args()
 results = torch.empty(input_args.runs)
 for r in range(input_args.runs):
-    test_f1 = train(Arguments(explicit_bool=True).load(input_args.configs))
+    merged_args = load_configurations(input_args.configs, input_args)
+    # merged_args.parse_args()
+    test_f1 = train(merged_args)
     results[r] = test_f1
 
 print(f'Acc: {100 * results.mean():.2f} ± {100 * results.std():.2f}')
