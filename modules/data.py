@@ -8,6 +8,8 @@ from torch_geometric.datasets import (Planetoid, WikiCS, Coauthor, Amazon,
                                       GNNBenchmarkDataset, Yelp, Flickr,
                                       Reddit2, PPI)
 from ogb.nodeproppred import PygNodePropPredDataset
+import torch_geometric.utils as pygutils
+
 
 from .utils import index2mask, gen_masks
 
@@ -50,6 +52,8 @@ def get_arxiv(root: str) -> Tuple[Data, int, int]:
                                      #pre_transform=T.ToSparseTensor())
     data = dataset[0]
     #data.adj_t = data.adj_t.to_symmetric()
+    # Instead of the commented line above use the following line to convert the edge_index to undirected
+    data.edge_index = pygutils.to_undirected(data.edge_index)
     data.node_year = None
     data.y = data.y.view(-1)
     split_idx = dataset.get_idx_split()
