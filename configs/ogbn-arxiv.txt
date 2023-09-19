@@ -6,9 +6,9 @@
 --hidden_dim 512
 --log_wandb true
 --log_z_init 0.0
---loss_coef 8331.63241476318
---lr_gc 0.0002464467060485163
---lr_gf 0.00000394461321904872
+--loss_coef 8456.984988036054
+--lr_gc 0.00042818469939050175
+--lr_gf 0.007026202172389002
 --max_epochs 150
 --model_type "gcn"
 --num_samples 256

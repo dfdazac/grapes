@@ -3,12 +3,12 @@
 --eval_frequency 10
 --eval_full_batch true
 --eval_on_cpu true
---hidden_dim 512
+--hidden_dim 256
 --log_wandb true
 --log_z_init 0.0
---loss_coef 37437.66970401453
---lr_gc 0.00002100235232570315
---lr_gf 0.00004179748147621785
+--loss_coef 271514.69379141746
+--lr_gc 9.865490215973911e-06
+--lr_gf 0.0003726255323697064
 --max_epochs 50
 --model_type "gcn"
 --num_samples 256
