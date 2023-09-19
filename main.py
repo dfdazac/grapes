@@ -231,8 +231,8 @@ def train(args: Arguments):
 
                 bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,
                                  'batch_loss_c': batch_loss_c,
-                                 'log_z': log_z,
-                                 'log_probs': torch.sum(torch.cat(log_probs, dim=0))})
+                                 'log_z': log_z.item(),
+                                 'log_probs': torch.sum(torch.cat(log_probs, dim=0)).item()})
                 bar.update()
 
         bar.close()
