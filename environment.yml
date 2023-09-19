@@ -1,4 +1,4 @@
-name: gflow-sampling-test
+name: gflow-sampling
 channels:
   - pyg
   - pytorch
