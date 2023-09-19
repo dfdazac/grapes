@@ -1,27 +1,24 @@
+import argparse
 import os
 
 import numpy as np
 import scipy.sparse as sp
 import torch
 import torch.nn as nn
+import torch_geometric
 import wandb
 from sklearn.metrics import accuracy_score, f1_score
 from tap import Tap
+from torch.distributions import Bernoulli
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
-from torch_geometric.datasets import Planetoid, Reddit
 from tqdm import tqdm
-from torch.distributions import Bernoulli
 
-from modules.gcn import GCN, GAT, GCN2
-from modules.utils import (TensorMap, get_neighborhoods,
-                           sample_neighborhoods_from_probs, slice_adjacency,
-                           get_logger)
 from modules.data import get_data, get_ppi
-import argparse
-import torch_geometric
-import argparse
-import json
+from modules.gcn import GCN, GCN2
+from modules.utils import (TensorMap, get_logger, get_neighborhoods,
+                           sample_neighborhoods_from_probs, slice_adjacency)
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
