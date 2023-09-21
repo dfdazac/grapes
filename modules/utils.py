@@ -55,7 +55,6 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     max_prob = b.probs.max(-1)[0]
 
     std_entropy, mean_entropy = torch.std_mean(entropy)
-    print("mean_entropy:", mean_entropy)
 
     mask = torch.zeros_like(logits.squeeze(), dtype=torch.float)
     mask[samples] = 1

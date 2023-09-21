@@ -166,7 +166,7 @@ def train(args: Arguments):
                         x = data.x[batch_nodes].to(device)
 
                     # Get probabilities for sampling each node
-                    node_logits = gcn_gf(x, local_neighborhoods)
+                    node_logits, _ = gcn_gf(x, local_neighborhoods)
                     # Select logits for neighbor nodes only
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
 
@@ -205,7 +205,7 @@ def train(args: Arguments):
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
                 x = data.x[all_nodes].to(device)
-                logits = gcn_c(x, edge_indices)
+                logits, gcn_mem_alloc = gcn_c(x, edge_indices)
 
                 local_target_ids = node_map.map(target_nodes)
                 loss_c = loss_fn(logits[local_target_ids],
@@ -213,6 +213,14 @@ def train(args: Arguments):
 
                 optimizer_c.zero_grad()
                 loss_c.backward()
+
+                if epoch == args.max_epochs:
+                    # measure GPU memory in megabytes
+                    mem_allocations_point1.append(torch.cuda.memory_allocated() / (1024 * 1024))
+                    mem_allocations_point2.append(gcn_mem_alloc)
+                    mean_mem1 = sum(mem_allocations_point1)/len(mem_allocations_point1)
+                    mean_mem2 = sum(mem_allocations_point2) / len(mem_allocations_point2)
+
                 optimizer_c.step()
 
                 optimizer_gf.zero_grad()
@@ -290,7 +298,7 @@ def train(args: Arguments):
                'test_f1': test_f1})
     logger.info(f'test_accuracy={test_accuracy:.3f}, '
                 f'test_f1={test_f1:.3f}')
-    return test_f1
+    return test_f1, mean_mem1, mean_mem2
 
 
 @torch.inference_mode()
@@ -331,7 +339,7 @@ def evaluate(gcn_c: torch.nn.Module,
     if full_batch:
         # perform full batch message passing for evaluation
 
-        logits_total = gcn_c(x, edge_index)
+        logits_total, _ = gcn_c(x, edge_index)
         if data.y[mask].dim() == 1:
             predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
             targets = data.y[mask]
@@ -402,7 +410,7 @@ def evaluate(gcn_c: torch.nn.Module,
                     x = data.x[batch_nodes].to(device)
 
                 # Get probabilities for sampling each node
-                node_logits = gcn_gf(x, local_neighborhoods)
+                node_logits, _ = gcn_gf(x, local_neighborhoods)
                 # Select logits for neighbor nodes only
                 node_logits = node_logits[node_map.map(neighbor_nodes)]
 
@@ -434,7 +442,7 @@ def evaluate(gcn_c: torch.nn.Module,
             edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
             x = data.x[all_nodes].to(device)
-            logits_total = gcn_c(x, edge_indices)
+            logits_total, _ = gcn_c(x, edge_indices)
             predictions = torch.argmax(logits_total, dim=1)
             predictions = predictions[node_map.map(target_nodes)]  # map back to original node IDs
 
@@ -457,9 +465,13 @@ if args.config_file is not None:
     args = Arguments(explicit_bool=True, config_files=[args.config_file])
     args = args.parse_args()
 
-results = torch.empty(args.runs)
+results = torch.empty(args.runs, 3)
 for r in range(args.runs):
-    test_f1 = train(args)
-    results[r] = test_f1
+    test_f1, mean_mem1, mean_mem2 = train(args)
+    results[r, 0] = test_f1
+    results[r, 1] = mean_mem1
+    results[r, 2] = mean_mem2
 
-print(f'Acc: {100 * results.mean():.2f} ± {100 * results.std():.2f}')
+print(f'Memory point 1: {results[:,1].mean()} MB ± {100 * results[:,1].std():.2f}')
+print(f'Memory point 2: {results[:,2].mean()} MB ± {100 * results[:,2].std():.2f}')
+print(f'Acc: {100 * results[:,0].mean():.2f} ± {100 * results[:,0].std():.2f}')

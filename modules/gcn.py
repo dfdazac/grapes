@@ -36,10 +36,10 @@ class GCN(nn.Module):
         logits = self.gcn_layers[-1](x, edges)
         logits = F.dropout(logits, p=self.dropout, training=self.training)
 
-        #torch.cuda.synchronize()
-        #print("allocated gcn: %.2f MB" % (torch.cuda.memory_allocated() / 1024 / 1024), flush=True)
+        # torch.cuda.synchronize()
+        memory_alloc = torch.cuda.memory_allocated() / (1024 * 1024)
 
-        return logits
+        return logits, memory_alloc
 
 
 class GAT(nn.Module):
