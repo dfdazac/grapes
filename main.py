@@ -111,6 +111,10 @@ def train(args: Arguments):
     batch_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
     indicator_features = torch.zeros((data.num_nodes, num_indicators))
 
+    # add a list to collect memory usage
+    mem_allocations_point1 = []  # The first point of memory usage measurement after the GCNConv forward pass
+    mem_allocations_point2 = []  # The second point of memory usage measurement after the GCNConv backward pass
+
     logger.info('Training')
     for epoch in range(1, args.max_epochs + 1):
         acc_loss_gfn = 0
@@ -226,6 +230,12 @@ def train(args: Arguments):
                            'log_z': log_z,
                            '-log_probs': -torch.sum(torch.cat(log_probs, dim=0))})
 
+                log_dict = {}
+                for i, statistics in enumerate(all_statistics):
+                    for key, value in statistics.items():
+                        log_dict[f"{key}_{i}"] = value
+                wandb.log(log_dict)
+
                 acc_loss_gfn += batch_loss_gfn / len(train_loader)
                 acc_loss_c += batch_loss_c / len(train_loader)
 
@@ -259,10 +269,6 @@ def train(args: Arguments):
                         'loss_binom': acc_loss_binom,
                         'valid_accuracy': accuracy,
                         'valid_f1': f1}
-            for i, statistics in enumerate(all_statistics):
-                for key, value in statistics.items():
-                    log_dict[f"{key}_{i}"] = value
-            wandb.log(log_dict)
 
             logger.info(f'loss_gfn={acc_loss_gfn:.6f}, '
                         f'loss_c={acc_loss_c:.6f}, '

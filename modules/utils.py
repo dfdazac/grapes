@@ -6,6 +6,9 @@ import torch
 from torch import Tensor
 from torch.distributions import Bernoulli, Gumbel
 import numpy as np
+import os
+import psutil
+
 
 from modules.simple import KSubsetDistribution
 
@@ -48,7 +51,8 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     min_prob = b.probs.min(-1)[0]
     max_prob = b.probs.max(-1)[0]
 
-    mean_entropy, std_entropy = torch.std_mean(entropy)
+    std_entropy, mean_entropy = torch.std_mean(entropy)
+    print("mean_entropy:", mean_entropy)
 
     mask = torch.zeros_like(logits.squeeze(), dtype=torch.float)
     mask[samples] = 1
@@ -190,3 +194,10 @@ def gen_masks(y: Tensor, train_per_class: int = 20, val_per_class: int = 30,
     test_mask = ~(train_mask | val_mask)
 
     return train_mask, val_mask, test_mask
+
+
+# Function to return memory usage in MB
+def memory_usage():
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / (1024**2)  # Convert bytes to MB
+
