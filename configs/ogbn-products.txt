@@ -3,7 +3,7 @@
 --eval_frequency 10
 --eval_full_batch true
 --eval_on_cpu true
---hidden_dim 512
+--hidden_dim 256
 --log_wandb true
 --log_z_init 0.0
 --loss_coef 15227.124438334951
