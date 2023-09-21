@@ -49,7 +49,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
 
     # entropy = b.entropy()
     # calculate the entropy in bits
-    entropy = -(b.probs * b.probs.log2() + (1 - b.probs) * (1 - b.probs).log2())
+    entropy = torch.tensor(-(b.probs * b.probs.log2() + (1 - b.probs) * (1 - b.probs).log2()))
 
     min_prob = b.probs.min(-1)[0]
     max_prob = b.probs.max(-1)[0]
