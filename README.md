@@ -1,8 +1,7 @@
 
-<p style="text-align:center;">
   <img src="grapes-logo.png" alt="drawing" style="width:400px;"/>
-  <h3>Sampling graphs with GFlowNets</p>h3>
-</p>
+  <h3>Sampling graphs with GFlowNets</h3>
+
 
 ## Instructions
 
