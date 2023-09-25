@@ -1,4 +1,5 @@
-# gflow-sampling
+
+<img src="grapes-logo.png" alt="drawing" style="width:200px;"/>
 Sampling graphs with GFlowNets
 
 ## Instructions
