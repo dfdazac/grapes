@@ -61,11 +61,6 @@ def train(args: Arguments):
     path = os.path.join(os.getcwd(), 'data', args.dataset)
     data, num_features, num_classes = get_data(root=path, name=args.dataset)
 
-    if args.dataset == 'ppi':
-        # PPI is inductive, it has separate datasets for each split.
-        val_data, _, _ = get_ppi(path, split='val')
-        test_data, _, _ = get_ppi(path, split='test')
-
     node_map = TensorMap(size=data.num_nodes)
 
     if args.use_indicators:
@@ -73,13 +68,7 @@ def train(args: Arguments):
     else:
         num_indicators = 0
 
-    if args.model_type == 'gcn2':
-        # GCN model  for classification
-        gcn_c = GCN2(data.num_features, hidden_dims=[args.hidden_dim, num_classes], alpha=0.1, theta=0.5).to(device)
-        # GCN model for GFlotNet sampling
-        gcn_gf = GCN2(data.num_features + num_indicators,
-                    hidden_dims=[args.hidden_dim, 1], alpha=0.1, theta=0.5).to(device)
-    elif args.model_type == 'gcn':
+    if args.model_type == 'gcn':
         gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], dropout=args.dropout).to(device)
         # GCN model for GFlotNet sampling
         gcn_gf = GCN(data.num_features + num_indicators,
@@ -282,6 +271,7 @@ def train(args: Arguments):
                         f'loss_c={acc_loss_c:.6f}, '
                         f'valid_accuracy={accuracy:.3f}, '
                         f'valid_f1={f1:.3f}')
+            wandb.log(log_dict)
 
     test_accuracy, test_f1 = evaluate(gcn_c,
                                       gcn_gf,
