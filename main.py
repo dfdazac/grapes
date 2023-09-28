@@ -209,8 +209,7 @@ def train(args: Arguments):
                 optimizer_c.zero_grad()
                 loss_c.backward()
 
-                mem_allocations_point1.append(torch.cuda.memory_allocated() / (1024 * 1024))
-                mem_allocations_point2.append(gcn_mem_alloc)
+
                 # mean_mem1 = sum(mem_allocations_point1) / len(mem_allocations_point1)
                 # mean_mem2 = sum(mem_allocations_point2) / len(mem_allocations_point2)
 
@@ -224,6 +223,10 @@ def train(args: Arguments):
 
                 loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
                 loss_gfn.backward()
+
+                mem_allocations_point1.append(torch.cuda.memory_allocated() / (1024 * 1024))
+                mem_allocations_point2.append(gcn_mem_alloc)
+
                 optimizer_gf.step()
 
                 batch_loss_gfn = loss_gfn.item()
