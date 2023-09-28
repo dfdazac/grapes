@@ -475,6 +475,6 @@ for r in range(args.runs):
     mem2.extend(mean_mem2)
 
 
-print(f'Memory point 1: {np.mean(mem1)} MB ± {100 * np.std(mem1):.2f}')
-print(f'Memory point 2: {np.mean(mem2)} MB ± {100 * np.std(mem2):.2f}')
+print(f'Memory point 1: {np.mean(mem1)} MB ± {np.std(mem1):.2f}')
+print(f'Memory point 2: {np.mean(mem2)} MB ± {np.std(mem2):.2f}')
 print(f'Acc: {100 * results.mean():.2f} ± {100 * results.std():.2f}')
