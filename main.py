@@ -115,6 +115,8 @@ def train(args: Arguments):
 
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(train_loader):
+                torch.cuda.empty_cache()
+
                 target_nodes = batch[0]
 
                 previous_nodes = target_nodes.clone()
