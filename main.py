@@ -118,6 +118,7 @@ def train(args: Arguments):
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(train_loader):
                 torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
 
                 target_nodes = batch[0]
 
@@ -221,7 +222,7 @@ def train(args: Arguments):
 
                 loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
 
-                mem_allocations_point1.append(torch.cuda.memory_allocated() / (1024 * 1024))
+                mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
                 mem_allocations_point2.append(gcn_mem_alloc)
 
                 loss_gfn.backward()
