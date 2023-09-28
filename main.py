@@ -100,15 +100,19 @@ def train(args: Arguments):
     batch_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
     indicator_features = torch.zeros((data.num_nodes, num_indicators))
 
-    # add a list to collect memory usage
-    mem_allocations_point1 = []  # The first point of memory usage measurement after the GCNConv forward pass
-    mem_allocations_point2 = []  # The second point of memory usage measurement after the GCNConv backward pass
+    # This will collect memory allocations for all epochs
+    all_mem_allocations_point1 = []
+    all_mem_allocations_point2 = []
 
     logger.info('Training')
     for epoch in range(1, args.max_epochs + 1):
         acc_loss_gfn = 0
         acc_loss_c = 0
         acc_loss_binom = 0
+        # add a list to collect memory usage
+        mem_allocations_point1 = []  # The first point of memory usage measurement after the GCNConv forward pass
+        mem_allocations_point2 = []  # The second point of memory usage measurement after the GCNConv backward pass
+
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(train_loader):
                 target_nodes = batch[0]
@@ -203,12 +207,13 @@ def train(args: Arguments):
                 optimizer_c.zero_grad()
                 loss_c.backward()
 
-                if epoch == args.max_epochs:
+                mem_allocations_point1.append(torch.cuda.memory_allocated() / (1024 * 1024))
+                mem_allocations_point2.append(gcn_mem_alloc)
+                # mean_mem1 = sum(mem_allocations_point1) / len(mem_allocations_point1)
+                # mean_mem2 = sum(mem_allocations_point2) / len(mem_allocations_point2)
+
+                # if epoch == args.max_epochs:
                     # measure GPU memory in megabytes
-                    mem_allocations_point1.append(torch.cuda.memory_allocated() / (1024 * 1024))
-                    mem_allocations_point2.append(gcn_mem_alloc)
-                    mean_mem1 = sum(mem_allocations_point1)/len(mem_allocations_point1)
-                    mean_mem2 = sum(mem_allocations_point2) / len(mem_allocations_point2)
 
                 optimizer_c.step()
 
@@ -243,6 +248,9 @@ def train(args: Arguments):
                 bar.update()
 
         bar.close()
+
+        all_mem_allocations_point1.extend(mem_allocations_point1)
+        all_mem_allocations_point2.extend(mem_allocations_point2)
 
         if (epoch + 1) % args.eval_frequency == 0:
             accuracy, f1 = evaluate(gcn_c,
@@ -288,7 +296,7 @@ def train(args: Arguments):
                'test_f1': test_f1})
     logger.info(f'test_accuracy={test_accuracy:.3f}, '
                 f'test_f1={test_f1:.3f}')
-    return test_f1, mean_mem1, mean_mem2
+    return test_f1, all_mem_allocations_point1, all_mem_allocations_point2
 
 
 @torch.inference_mode()
@@ -455,13 +463,16 @@ if args.config_file is not None:
     args = Arguments(explicit_bool=True, config_files=[args.config_file])
     args = args.parse_args()
 
-results = torch.empty(args.runs, 3)
+results = torch.empty(args.runs)
+mem1 = []
+mem2 = []
 for r in range(args.runs):
     test_f1, mean_mem1, mean_mem2 = train(args)
-    results[r, 0] = test_f1
-    results[r, 1] = mean_mem1
-    results[r, 2] = mean_mem2
+    results[r] = test_f1
+    mem1.extend(mean_mem1)
+    mem2.extend(mean_mem2)
 
-print(f'Memory point 1: {results[:,1].mean()} MB ± {100 * results[:,1].std():.2f}')
-print(f'Memory point 2: {results[:,2].mean()} MB ± {100 * results[:,2].std():.2f}')
-print(f'Acc: {100 * results[:,0].mean():.2f} ± {100 * results[:,0].std():.2f}')
+
+print(f'Memory point 1: {np.mean(mem1)} MB ± {100 * np.std(mem1):.2f}')
+print(f'Memory point 2: {np.mean(mem2)} MB ± {100 * np.std(mem2):.2f}')
+print(f'Acc: {100 * results.mean():.2f} ± {100 * results.std():.2f}')
