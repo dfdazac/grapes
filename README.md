@@ -3,6 +3,12 @@
   <h3>Sampling graphs with GFlowNets</h3>
 
 
+## Other related repos
+
+* LADIES & FastGCN: https://anonymous.4open.science/r/LADIES-9589
+* GAS: https://anonymous.4open.science/r/pyg_autoscale-2A4C
+* Data Analysis: https://anonymous.4open.science/r/GRAPES-plots-and-analyses-F4B6
+
 ## Instructions
 
 ### 1. Install dependencies
