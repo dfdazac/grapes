@@ -1,13 +1,14 @@
 import logging
-import os
-import time
 from typing import Dict, Tuple
 
-import numpy as np
 import scipy.sparse as sp
 import torch
 from torch import Tensor
-from torch.distributions import Bernoulli
+from torch.distributions import Bernoulli, Gumbel
+import numpy as np
+import os
+import psutil
+
 
 from modules.simple import KSubsetDistribution
 
@@ -18,6 +19,9 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
+
+    Uses Gumbel-max trick to sample from Bernoulli distribution. This is off-policy, since the original input
+    distribution is a regular Bernoulli distribution.
     Args:
         logits: tensor of shape (N,), where N all the number of unique
             nodes in a batch, containing the probability of dropping the node.
@@ -27,33 +31,45 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
 
     k = num_samples
     n = neighbor_nodes.shape[0]
-    if k == n:
+    if k >= n:
+        # TODO: Test this setting
         return neighbor_nodes, torch.sigmoid(
-            logits.squeeze(-1)).log().sum(), {}
+            logits.squeeze(-1)).log(), {}
     assert k < n
     assert k > 0
-    sampling_rate = k / n
-    logit_bias = -np.log((1 / sampling_rate) - 1)
-    logit = logits.squeeze(-1) + logit_bias
 
-    b = Bernoulli(logits=logit)
-    entropy = b.entropy()
+    b = Bernoulli(logits=logits.squeeze())
+
+    # Gumbel-sort trick https://timvieira.github.io/blog/post/2014/08/01/gumbel-max-trick-and-weighted-reservoir-sampling/
+    gumbel = Gumbel(torch.tensor(0., device=logits.device), torch.tensor(1., device=logits.device))
+    gumbel_noise = gumbel.sample((n,))
+    perturbed_log_probs = b.probs.log() + gumbel_noise
+
+    samples = torch.topk(perturbed_log_probs, k=k, dim=0, sorted=False)[1]
+
+    # entropy = b.entropy()
+    # calculate the entropy in bits
+    entropy = torch.tensor(-(b.probs * (b.probs).log2() + (1 - b.probs) * (1 - b.probs).log2()))
+
     min_prob = b.probs.min(-1)[0]
     max_prob = b.probs.max(-1)[0]
 
-    mean_entropy, std_entropy = torch.std_mean(entropy)
+    if torch.isnan(entropy).any():
+        nan_ind = torch.isnan(entropy)
+        entropy[nan_ind] = 0.0
 
-    samples = b.sample()
-    k_sampled = samples.sum()
-    neighbor_nodes = neighbor_nodes[(samples == 1).cpu()]
+    std_entropy, mean_entropy = torch.std_mean(entropy)
+    mask = torch.zeros_like(logits.squeeze(), dtype=torch.float)
+    mask[samples] = 1
+
+    neighbor_nodes = neighbor_nodes[mask.bool().cpu()]
 
     stats_dict = {"min_prob": min_prob,
                   "max_prob": max_prob,
                   "mean_entropy": mean_entropy,
-                  "std_entropy": std_entropy,
-                  "k_nodes_sampled": k_sampled}
+                  "std_entropy": std_entropy}
 
-    return neighbor_nodes, b.log_prob(samples), stats_dict
+    return neighbor_nodes, b.log_prob(mask), stats_dict
 
 
 def sample_neighborhood_simple(probabilities: torch.Tensor,
@@ -142,3 +158,51 @@ def get_logger():
     logger.setLevel('INFO')
 
     return logger
+
+
+def row_normalize(mx):
+    """Row-normalize sparse matrix"""
+    rowsum = np.array(mx.sum(1))
+    r_inv = np.power(rowsum, -1).flatten()
+    r_inv[np.isinf(r_inv)] = 0.
+    r_mat_inv = sp.diags(r_inv)
+
+    mx = r_mat_inv.dot(mx)
+    return mx
+
+
+# From PyGAS, PyTorch Geometric Auto-Scale: https://github.com/rusty1s/pyg_autoscale/tree/master
+def index2mask(idx: Tensor, size: int) -> Tensor:
+    mask = torch.zeros(size, dtype=torch.bool, device=idx.device)
+    mask[idx] = True
+    return mask
+
+
+def gen_masks(y: Tensor, train_per_class: int = 20, val_per_class: int = 30,
+              num_splits: int = 20) -> Tuple[Tensor, Tensor, Tensor]:
+    num_classes = int(y.max()) + 1
+
+    train_mask = torch.zeros(y.size(0), num_splits, dtype=torch.bool)
+    val_mask = torch.zeros(y.size(0), num_splits, dtype=torch.bool)
+
+    for c in range(num_classes):
+        idx = (y == c).nonzero(as_tuple=False).view(-1)
+        perm = torch.stack(
+            [torch.randperm(idx.size(0)) for _ in range(num_splits)], dim=1)
+        idx = idx[perm]
+
+        train_idx = idx[:train_per_class]
+        train_mask.scatter_(0, train_idx, True)
+        val_idx = idx[train_per_class:train_per_class + val_per_class]
+        val_mask.scatter_(0, val_idx, True)
+
+    test_mask = ~(train_mask | val_mask)
+
+    return train_mask, val_mask, test_mask
+
+
+# Function to return memory usage in MB
+def memory_usage():
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / (1024**2)  # Convert bytes to MB
+

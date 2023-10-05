@@ -1,5 +1,16 @@
-# gflow-sampling
-Sampling graphs with GFlowNets
+
+  <img src="grapes-logo.png" alt="drawing" style="width:400px;"/>
+  <h3>Sampling graphs with GFlowNets</h3>
+
+
+## Baselines and Data Analysis
+
+For the baseline implementation anad data analysis, please check out the following repos:
+
+* LADIES & FastGCN: https://anonymous.4open.science/r/LADIES-9589
+* GAS: https://anonymous.4open.science/r/pyg_autoscale-2A4C
+* AS-GCN: https://anonymous.4open.science/r/as-gcn-B0FA
+* Data Analysis: https://anonymous.4open.science/r/GRAPES-plots-and-analyses-F4B6
 
 ## Instructions
 

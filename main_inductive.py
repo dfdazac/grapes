@@ -1,23 +1,26 @@
-import argparse
 import os
 
 import numpy as np
 import scipy.sparse as sp
 import torch
 import torch.nn as nn
-import torch_geometric
 import wandb
 from sklearn.metrics import accuracy_score, f1_score
 from tap import Tap
-from torch.distributions import Bernoulli
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
+from torch_geometric.datasets import Planetoid, Reddit
 from tqdm import tqdm
+from torch.distributions import Bernoulli
 
+from modules.gcn import GCN, GAT, GCN2
+from modules.utils import (TensorMap, get_neighborhoods,
+                           sample_neighborhoods_from_probs, slice_adjacency,
+                           get_logger)
 from modules.data import get_data, get_ppi
-from modules.gcn import GCN, GCN2
-from modules.utils import (TensorMap, get_logger, get_neighborhoods,
-                           sample_neighborhoods_from_probs, slice_adjacency)
+import argparse
+import torch_geometric
+from torch_geometric.nn.conv.gcn_conv import gcn_norm
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -34,7 +37,6 @@ class Arguments(Tap):
     loss_coef: float = 1e4
     log_z_init: float = 0.
     reg_param: float = 0.
-    dropout: float = 0.
 
     model_type: str = 'gcn'
     hidden_dim: int = 256
@@ -44,10 +46,8 @@ class Arguments(Tap):
     eval_on_cpu: bool = False
     eval_full_batch: bool = False
 
-    runs: int = 10
     notes: str = None
     log_wandb: bool = True
-    config_file: str = None
 
 
 def train(args: Arguments):
@@ -59,7 +59,22 @@ def train(args: Arguments):
     logger = get_logger()
 
     path = os.path.join(os.getcwd(), 'data', args.dataset)
-    data, num_features, num_classes = get_data(root=path, name=args.dataset)
+
+    if args.dataset == 'ppi':
+        # PPI is inductive, it has separate datasets for each split.
+        data, num_features, num_classes = get_ppi(root=path, split='train')
+        val_data, _, _ = get_ppi(path, split='val')
+        test_data, _, _ = get_ppi(path, split='test')
+        # val_data.edge_index = gcn_norm(val_data.edge_index, add_self_loops=True)
+        # test_data.edge_index = gcn_norm(test_data.edge_index, add_self_loops=True)
+        val_adjacency = sp.csr_matrix((np.ones(val_data.num_edges, dtype=bool),
+                            val_data.edge_index),
+                            shape=(val_data.num_nodes, val_data.num_nodes))
+        test_adjacency = sp.csr_matrix((np.ones(test_data.num_edges, dtype=bool),
+                            test_data.edge_index),
+                            shape=(test_data.num_nodes, test_data.num_nodes))
+    else:
+        data, num_features, num_classes = get_data(root=path, name=args.dataset)
 
     node_map = TensorMap(size=data.num_nodes)
 
@@ -68,8 +83,14 @@ def train(args: Arguments):
     else:
         num_indicators = 0
 
-    if args.model_type == 'gcn':
-        gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], dropout=args.dropout).to(device)
+    if args.model_type == 'gcn2':
+        # GCN model  for classification
+        gcn_c = GCN2(data.num_features, hidden_dims=[args.hidden_dim, num_classes], alpha=0.1, theta=0.5).to(device)
+        # GCN model for GFlotNet sampling
+        gcn_gf = GCN2(data.num_features + num_indicators,
+                    hidden_dims=[args.hidden_dim, 1], alpha=0.1, theta=0.5).to(device)
+    elif args.model_type == 'gcn':
+        gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes]).to(device)
         # GCN model for GFlotNet sampling
         gcn_gf = GCN(data.num_features + num_indicators,
                       hidden_dims=[args.hidden_dim, 1]).to(device)
@@ -86,10 +107,10 @@ def train(args: Arguments):
     train_idx = data.train_mask.nonzero().squeeze(1)
     train_loader = DataLoader(TensorDataset(train_idx), batch_size=args.batch_size)
 
-    val_idx = data.val_mask.nonzero().squeeze(1)
+    val_idx = val_data.val_mask.nonzero().squeeze(1)
     val_loader = DataLoader(TensorDataset(val_idx), batch_size=args.batch_size)
 
-    test_idx = data.test_mask.nonzero().squeeze(1)
+    test_idx = test_data.test_mask.nonzero().squeeze(1)
     test_loader = DataLoader(TensorDataset(test_idx), batch_size=args.batch_size)
 
     adjacency = sp.csr_matrix((np.ones(data.num_edges, dtype=bool),
@@ -100,26 +121,13 @@ def train(args: Arguments):
     batch_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
     indicator_features = torch.zeros((data.num_nodes, num_indicators))
 
-    # This will collect memory allocations for all epochs
-    all_mem_allocations_point1 = []
-    all_mem_allocations_point2 = []
-    all_mem_allocations_point3 = []
-
     logger.info('Training')
     for epoch in range(1, args.max_epochs + 1):
         acc_loss_gfn = 0
         acc_loss_c = 0
         acc_loss_binom = 0
-        # add a list to collect memory usage
-        mem_allocations_point1 = []  # The first point of memory usage measurement after the GCNConv forward pass
-        mem_allocations_point2 = []  # The second point of memory usage measurement after the GCNConv backward pass
-        mem_allocations_point3 = []  # The third point of memory usage measurement after the GCNConv backward pass
-
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(train_loader):
-                torch.cuda.empty_cache()
-                torch.cuda.reset_peak_memory_stats()
-
                 target_nodes = batch[0]
 
                 previous_nodes = target_nodes.clone()
@@ -164,7 +172,7 @@ def train(args: Arguments):
                         x = data.x[batch_nodes].to(device)
 
                     # Get probabilities for sampling each node
-                    node_logits, _ = gcn_gf(x, local_neighborhoods)
+                    node_logits = gcn_gf(x, local_neighborhoods)
                     # Select logits for neighbor nodes only
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
 
@@ -203,30 +211,21 @@ def train(args: Arguments):
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
                 x = data.x[all_nodes].to(device)
-                logits, gcn_mem_alloc = gcn_c(x, edge_indices)
+                logits = gcn_c(x, edge_indices)
 
                 local_target_ids = node_map.map(target_nodes)
                 loss_c = loss_fn(logits[local_target_ids],
                                  data.y[target_nodes].to(device)) + args.reg_param*torch.sum(torch.var(logits, dim=1))
 
                 optimizer_c.zero_grad()
-
-                mem_allocations_point3.append(torch.cuda.memory_allocated() / (1024 * 1024))
-
                 loss_c.backward()
-
                 optimizer_c.step()
 
                 optimizer_gf.zero_grad()
                 cost_gfn = loss_c.detach()
 
                 loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
-
-                mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
-                mem_allocations_point2.append(gcn_mem_alloc)
-
                 loss_gfn.backward()
-
                 optimizer_gf.step()
 
                 batch_loss_gfn = loss_gfn.item()
@@ -237,36 +236,26 @@ def train(args: Arguments):
                            'log_z': log_z,
                            '-log_probs': -torch.sum(torch.cat(log_probs, dim=0))})
 
-                log_dict = {}
-                for i, statistics in enumerate(all_statistics):
-                    for key, value in statistics.items():
-                        log_dict[f"{key}_{i}"] = value
-                wandb.log(log_dict)
-
                 acc_loss_gfn += batch_loss_gfn / len(train_loader)
                 acc_loss_c += batch_loss_c / len(train_loader)
 
                 bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,
                                  'batch_loss_c': batch_loss_c,
-                                 'log_z': log_z.item(),
-                                 'log_probs': torch.sum(torch.cat(log_probs, dim=0)).item()})
+                                 'log_z': log_z,
+                                 'log_probs': torch.sum(torch.cat(log_probs, dim=0))})
                 bar.update()
 
         bar.close()
 
-        all_mem_allocations_point1.extend(mem_allocations_point1)
-        all_mem_allocations_point2.extend(mem_allocations_point2)
-        all_mem_allocations_point3.extend(mem_allocations_point3)
-
         if (epoch + 1) % args.eval_frequency == 0:
             accuracy, f1 = evaluate(gcn_c,
                                     gcn_gf,
-                                    data,
+                                    val_data,
                                     args,
-                                    adjacency,
+                                    val_adjacency,
                                     node_map,
                                     num_indicators,
-                                    data.val_mask,
+                                    val_data.val_mask,
                                     args.eval_on_cpu,
                                     loader=val_loader,
                                     full_batch=args.eval_full_batch,
@@ -280,21 +269,24 @@ def train(args: Arguments):
                         'loss_binom': acc_loss_binom,
                         'valid_accuracy': accuracy,
                         'valid_f1': f1}
+            for i, statistics in enumerate(all_statistics):
+                for key, value in statistics.items():
+                    log_dict[f"{key}_{i}"] = value
+            wandb.log(log_dict)
 
             logger.info(f'loss_gfn={acc_loss_gfn:.6f}, '
                         f'loss_c={acc_loss_c:.6f}, '
                         f'valid_accuracy={accuracy:.3f}, '
                         f'valid_f1={f1:.3f}')
-            wandb.log(log_dict)
 
     test_accuracy, test_f1 = evaluate(gcn_c,
                                       gcn_gf,
-                                      data,
+                                      test_data,
                                       args,
-                                      adjacency,
+                                      test_adjacency,
                                       node_map,
                                       num_indicators,
-                                      data.test_mask,
+                                      test_data.test_mask,
                                       args.eval_on_cpu,
                                       loader=test_loader,
                                       full_batch=args.eval_full_batch)
@@ -302,7 +294,6 @@ def train(args: Arguments):
                'test_f1': test_f1})
     logger.info(f'test_accuracy={test_accuracy:.3f}, '
                 f'test_f1={test_f1:.3f}')
-    return test_f1, all_mem_allocations_point1, all_mem_allocations_point2, all_mem_allocations_point3
 
 
 @torch.inference_mode()
@@ -342,16 +333,14 @@ def evaluate(gcn_c: torch.nn.Module,
 
     if full_batch:
         # perform full batch message passing for evaluation
-
-        logits_total, _ = gcn_c(x, edge_index)
-        if data.y[mask].dim() == 1:
+        logits_total = gcn_c(x, edge_index)
+        if data.y[mask].dim == 1:
             predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
             targets = data.y[mask]
             accuracy = accuracy_score(targets, predictions)
             f1 = f1_score(targets, predictions, average='micro')
-        # multilabel classification
         else:
-            y_pred = logits_total[mask] > 0
+            y_pred = logits_total > 0
             y_true = data.y[mask] > 0.5
 
             tp = int((y_true & y_pred).sum())
@@ -364,6 +353,7 @@ def evaluate(gcn_c: torch.nn.Module,
                 f1 = accuracy = 2 * (precision * recall) / (precision + recall)
             except ZeroDivisionError:
                 f1 = 0.
+
     else:
         # perform mini-batch message passing for evaluation
         assert loader is not None, 'loader must be provided if full_batch is False'
@@ -414,7 +404,7 @@ def evaluate(gcn_c: torch.nn.Module,
                     x = data.x[batch_nodes].to(device)
 
                 # Get probabilities for sampling each node
-                node_logits, _ = gcn_gf(x, local_neighborhoods)
+                node_logits = gcn_gf(x, local_neighborhoods)
                 # Select logits for neighbor nodes only
                 node_logits = node_logits[node_map.map(neighbor_nodes)]
 
@@ -446,7 +436,7 @@ def evaluate(gcn_c: torch.nn.Module,
             edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
             x = data.x[all_nodes].to(device)
-            logits_total, _ = gcn_c(x, edge_indices)
+            logits_total = gcn_c(x, edge_indices)
             predictions = torch.argmax(logits_total, dim=1)
             predictions = predictions[node_map.map(target_nodes)]  # map back to original node IDs
 
@@ -461,27 +451,4 @@ def evaluate(gcn_c: torch.nn.Module,
     return accuracy, f1
 
 
-args = Arguments(explicit_bool=True).parse_args()
-
-# If a config file is specified, load it, and parse again the CLI
-# which takes precedence
-if args.config_file is not None:
-    args = Arguments(explicit_bool=True, config_files=[args.config_file])
-    args = args.parse_args()
-
-results = torch.empty(args.runs)
-mem1 = []
-mem2 = []
-mem3 = []
-for r in range(args.runs):
-    test_f1, mean_mem1, mean_mem2, mean_mem3 = train(args)
-    results[r] = test_f1
-    mem1.extend(mean_mem1)
-    mem2.extend(mean_mem2)
-    mem3.extend(mean_mem3)
-
-
-print(f'Memory point 1: {np.mean(mem1)} MB ± {np.std(mem1):.2f}')
-print(f'Memory point 2: {np.mean(mem2)} MB ± {np.std(mem2):.2f}')
-print(f'Memory point 2: {np.mean(mem3)} MB ± {np.std(mem3):.2f}')
-print(f'Acc: {100 * results.mean():.2f} ± {100 * results.std():.2f}')
+train(Arguments(explicit_bool=True).parse_args())
