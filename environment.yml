@@ -1,4 +1,4 @@
-name: gflow-sampling
+name: grapes
 channels:
   - pyg
   - pytorch

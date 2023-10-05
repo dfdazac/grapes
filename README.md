@@ -13,7 +13,7 @@ Create a conda environment with the provided file, then activate it:
 
 ```sh
 conda env create -f environment.yml
-conda activate gflow-sampling
+conda activate grapes
 ```
 
 ### 2. Train a model
