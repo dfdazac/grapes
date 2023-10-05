@@ -37,6 +37,7 @@ When using a GPU, training on Cora should take less than 10 seconds.
 Logging on Weights & Biases is enabled by default. Results will be logged to a project with name `gflow-sampling`.
 To disable this, add the flag `--log_wandb=False`.
 
+---
 
 ### Baselines and Data Analysis
 
