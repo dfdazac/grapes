@@ -9,6 +9,7 @@ For the baseline implementation anad data analysis, please check out the followi
 
 * LADIES & FastGCN: https://anonymous.4open.science/r/LADIES-9589
 * GAS: https://anonymous.4open.science/r/pyg_autoscale-2A4C
+* AS-GCN: https://anonymous.4open.science/r/as-gcn-B0FA
 * Data Analysis: https://anonymous.4open.science/r/GRAPES-plots-and-analyses-F4B6
 
 ## Instructions
