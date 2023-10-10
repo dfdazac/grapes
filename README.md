@@ -3,7 +3,7 @@
 </div>
 <br>
 
-This repository contains the official implementation of the graph sampling method presented in "GRAPES: Learning to Sample Graphs for Scalable Graph Neural Networks".
+This repository contains the official implementation of the graph sampling method presented in ["GRAPES: Learning to Sample Graphs for Scalable Graph Neural Networks"](https://arxiv.org/abs/2310.03399).
 
 ## Instructions
 
