@@ -24,13 +24,14 @@ Run the following to train a GCN classifier on the Cora dataset:
 python main.py
 ```
 
-Available datasets are `cora`, `citeseer`, and `pubmed` via the `--dataset` flag. For example,
+We provide configuration files to reproduce the results in our experiments with all datasets.
+To use them, run:
 
 ```sh
-python main.py --dataset=citeseer
+python main.py --config_file=configs/<dataset>.txt
 ```
 
-When using a GPU, training on Cora should take less than 10 seconds.
+Replacing `<dataset>` with the name of the dataset.
 
 ### 3. Inspect results on W&B
 
