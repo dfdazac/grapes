@@ -1,21 +1,18 @@
-import argparse
 import os
 
 import numpy as np
 import scipy.sparse as sp
 import torch
 import torch.nn as nn
-import torch_geometric
 import wandb
 from tap import Tap
-from torch.distributions import Bernoulli
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
 from eval import evaluate
-from modules.data import get_data, get_ppi
-from modules.gcn import GCN, GCN2
+from modules.data import get_data
+from modules.gcn import GCN
 from modules.utils import (TensorMap, get_logger, get_neighborhoods,
                            sample_neighborhoods_from_probs, slice_adjacency)
 

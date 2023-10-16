@@ -1,13 +1,14 @@
 import logging
+import os
 from typing import Dict, Tuple
 
+import numpy as np
+import psutil
 import scipy.sparse as sp
 import torch
 from torch import Tensor
 from torch.distributions import Bernoulli, Gumbel
-import numpy as np
-import os
-import psutil
+
 
 def sample_neighborhoods_from_probs(logits: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,

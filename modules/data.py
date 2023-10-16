@@ -3,15 +3,14 @@ from typing import Tuple
 
 import torch
 import torch_geometric.transforms as T
-from torch_geometric.data import Data, Batch
-from torch_geometric.datasets import (Planetoid, WikiCS, Coauthor, Amazon,
-                                      GNNBenchmarkDataset, Yelp, Flickr,
-                                      Reddit2, PPI)
-from ogb.nodeproppred import PygNodePropPredDataset
 import torch_geometric.utils as pygutils
+from ogb.nodeproppred import PygNodePropPredDataset
+from torch_geometric.data import Batch, Data
+from torch_geometric.datasets import (PPI, Amazon, Coauthor, Flickr,
+                                      GNNBenchmarkDataset, Planetoid, Reddit2,
+                                      WikiCS, Yelp)
 
-
-from .utils import index2mask, gen_masks
+from .utils import gen_masks, index2mask
 
 
 def get_planetoid(root: str, name: str) -> Tuple[Data, int, int]:

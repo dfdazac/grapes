@@ -3,7 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, GATConv, GCN2Conv, Linear, MessagePassing, PNAConv
+from torch_geometric.nn import GATConv, GCN2Conv, GCNConv, Linear,  PNAConv
 
 
 class GCN(nn.Module):
