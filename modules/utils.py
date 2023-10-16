@@ -9,10 +9,6 @@ import numpy as np
 import os
 import psutil
 
-
-from modules.simple import KSubsetDistribution
-
-
 def sample_neighborhoods_from_probs(logits: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
                                     num_samples: int = -1
@@ -47,7 +43,6 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
 
     samples = torch.topk(perturbed_log_probs, k=k, dim=0, sorted=False)[1]
 
-    # entropy = b.entropy()
     # calculate the entropy in bits
     entropy = torch.tensor(-(b.probs * (b.probs).log2() + (1 - b.probs) * (1 - b.probs).log2()))
 
@@ -70,31 +65,6 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
                   "std_entropy": std_entropy}
 
     return neighbor_nodes, b.log_prob(mask), stats_dict
-
-
-def sample_neighborhood_simple(probabilities: torch.Tensor,
-                               neighbor_nodes: torch.Tensor,
-                               num_samples: int = -1
-                               ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Remove edges from an edge index, by removing nodes according to some
-    probability.
-    Args:
-        probabilities: tensor of shape (N,), where N all the number of unique
-        logits: tensor of shape (N,), where N all the number of unique
-            nodes in a batch, containing the probability of dropping the node.
-        neighbor_nodes: tensor containing global node identifiers of the neighbors nodes
-        num_samples: the number of samples to keep. If None, all edges are kept.
-    """
-    if num_samples > 0:
-        node_k_subset = KSubsetDistribution(probabilities, num_samples)
-        node_samples = node_k_subset.sample()
-        neighbor_nodes = neighbor_nodes[node_samples.long() == 1]
-
-        # Check that we have the right number of samples
-        assert len(neighbor_nodes) == num_samples
-        return neighbor_nodes, node_k_subset.log_prob(node_samples)
-    else:
-        return neighbor_nodes, None
 
 
 def get_neighborhoods(nodes: Tensor,
