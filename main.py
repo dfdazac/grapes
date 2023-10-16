@@ -38,8 +38,8 @@ class Arguments(Tap):
     max_epochs: int = 30
     batch_size: int = 512
     eval_frequency: int = 5
-    eval_on_cpu: bool = False
-    eval_full_batch: bool = False
+    eval_on_cpu: bool = True
+    eval_full_batch: bool = True
 
     runs: int = 10
     notes: str = None
