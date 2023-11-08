@@ -99,7 +99,7 @@ def train(args: Arguments):
 
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
             x = data.x.to(device)
-            logits, gcn_mem_alloc = gcn_c(x, data.edge_index)
+            logits, gcn_mem_alloc = gcn_c(x, data.edge_index.to(device))
             loss_c = loss_fn(logits[data.train_mask], data.y[data.train_mask].to(device))
 
             optimizer_c.zero_grad()
@@ -127,7 +127,7 @@ def train(args: Arguments):
             wandb.log(log_dict)
 
     x = data.x.to(device)
-    logits, gcn_mem_alloc = gcn_c(x, data.edge_index)
+    logits, gcn_mem_alloc = gcn_c(x, data.edge_index.to(device))
     test_predictions = torch.argmax(logits, dim=1)[data.test_mask].cpu()
     targets = data.y[data.test_mask]
     test_accuracy = accuracy_score(targets, test_predictions)
