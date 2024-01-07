@@ -15,6 +15,7 @@ parser.add_argument('--hidden_dim', default=256, type=int)
 parser.add_argument('--dataset', type=str)
 parser.add_argument('--runs', default=1, type=int)
 parser.add_argument('--lr', default=0.01, type=float)
+parser.add_argument('--max_epoch', default=50, type=int)
 args = parser.parse_args()
 
 
@@ -99,7 +100,7 @@ for run in range(args.runs):
     model = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes]).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    for epoch in range(1, 101):
+    for epoch in range(1, args.max_epoch+1):
         loss = train(model, loader, loss_fn)
         val_acc, test_acc = test(model, data)
         print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Val: {val_acc:.4f}, Test: {test_acc:.4f}')
