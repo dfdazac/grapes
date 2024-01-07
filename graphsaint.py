@@ -13,6 +13,7 @@ parser.add_argument('--use_normalization', action='store_true')
 parser.add_argument('--hidden_dim', default=256, type=int)
 parser.add_argument('--dataset', type=str)
 parser.add_argument('--runs', default=1, type=int)
+parser.add_argument('--lr', default=0.01, type=float)
 args = parser.parse_args()
 
 
@@ -82,7 +83,7 @@ for run in range(args.runs):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes]).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     for epoch in range(1, 101):
         loss = train(model, loader, loss_fn)
