@@ -106,4 +106,4 @@ for run in range(args.runs):
         print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Val: {val_acc:.4f}, Test: {test_acc:.4f}')
 
     results[run] = val_acc
-print(f'Mini Acc: {100 * results.mean():.2f} ± {100 * results.std():.2f}')
+print(f'Acc: {100 * results.mean():.2f} ± {100 * results.std():.2f}')
