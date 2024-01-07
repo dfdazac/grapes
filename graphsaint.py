@@ -1,5 +1,6 @@
 import argparse
 import os
+import pdb
 
 import torch
 import torch.nn as nn
@@ -26,7 +27,7 @@ def train(model, loader, loss_fn):
 
         out = model(batch.x, batch.edge_index)
         train_idx = batch.train_mask.nonzero().squeeze(1)
-        loss = loss_fn(out[train_idx],
+        loss = loss_fn(out[0][train_idx],
                                    batch.y[train_idx])
 
         loss.backward()
@@ -41,18 +42,29 @@ def test(model, data):
     model.eval()
     out = model(data.x.to('cpu'), data.edge_index.to('cpu'))
     if data.y.dim() == 1:
-        pred = out.argmax(dim=-1)
+        pred = out[0].argmax(dim=-1)
         correct = pred.eq(data.y.to('cpu'))
 
         # accs = []
-        # train_acc = correct[data.train_mask].float().mean().item()
-        # val_acc = correct[data.val_mask].float().mean().item()
+        train_acc = correct[data.train_mask].float().mean().item()
+        val_acc = correct[data.val_mask].float().mean().item()
         test_acc = correct[data.test_mask].float().mean().item()
 
     # multilabel classification
     else:
         y_pred = out > 0
         y_true = data.y > 0.5
+
+        tp = int((y_true[data.val_mask].to('cpu') & y_pred[data.val_mask].to('cpu')).sum())
+        fp = int((~y_true[data.val_mask].to('cpu') & y_pred[data.val_mask].to('cpu')).sum())
+        fn = int((y_true[data.val_mask].to('cpu') & ~y_pred[data.val_mask].to('cpu')).sum())
+
+        try:
+            precision = tp / (tp + fp)
+            recall = tp / (tp + fn)
+            val_acc = accuracy = 2 * (precision * recall) / (precision + recall)
+        except ZeroDivisionError:
+            val_acc = 0.
 
         tp = int((y_true[data.test_mask].to('cpu') & y_pred[data.test_mask].to('cpu')).sum())
         fp = int((~y_true[data.test_mask].to('cpu') & y_pred[data.test_mask].to('cpu')).sum())
@@ -65,7 +77,7 @@ def test(model, data):
         except ZeroDivisionError:
             test_acc = 0.
 
-    return test_acc
+    return val_acc, test_acc
 
 
 results = torch.empty(args.runs)
@@ -87,8 +99,8 @@ for run in range(args.runs):
 
     for epoch in range(1, 101):
         loss = train(model, loader, loss_fn)
-        accs = test(model, data)
-        print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Test: {accs:.4f}')
+        val_acc, test_acc = test(model, data)
+        print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Val: {val_acc:.4f}, Test: {test_acc:.4f}')
 
-    results[run] = accs
+    results[run] = val_acc
 print(f'Mini Acc: {100 * results.mean():.2f} ± {100 * results.std():.2f}')
