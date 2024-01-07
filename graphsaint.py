@@ -39,6 +39,7 @@ def train(model, loader, loss_fn):
 
 @torch.no_grad()
 def test(model, data):
+    model = model.cpu()
     model.eval()
     out = model(data.x.to('cpu'), data.edge_index.to('cpu'))
     if data.y.dim() == 1:
