@@ -19,6 +19,7 @@ args = parser.parse_args()
 
 
 def train(model, loader, loss_fn):
+    model = model.cuda()
     model.train()
     total_loss = total_examples = 0
     for batch in loader:
