@@ -55,7 +55,7 @@ def test(model, data):
 
     # multilabel classification
     else:
-        y_pred = out > 0
+        y_pred = out[0] > 0
         y_true = data.y > 0.5
 
         tp = int((y_true[data.val_mask].to('cpu') & y_pred[data.val_mask].to('cpu')).sum())
