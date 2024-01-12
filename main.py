@@ -170,6 +170,8 @@ def train(args: Arguments):
                             neighbor_nodes,
                             args.num_samples
                         )
+                        sampled_neighboring_nodes, _ = torch.sort(torch.tensor(
+                            np.random.choice(neighbor_nodes, size=args.num_samples, replace=False)))
                         # Update batch nodes for next hop
                         batch_nodes = torch.cat([target_nodes,
                                                  sampled_neighboring_nodes],
@@ -186,8 +188,6 @@ def train(args: Arguments):
                         # Retrieve the edge index that results after sampling
                         k_hop_edges = torch.cat((batch_nodes.unsqueeze(0), sampled_neighboring_nodes.unsqueeze(0)), dim=0)
 
-                    # sampled_neighboring_nodes, _ = torch.sort(torch.tensor(
-                    #     np.random.choice(neighbor_nodes, size=args.num_samples, replace=False)))
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
                     log_probs.append(log_prob)
