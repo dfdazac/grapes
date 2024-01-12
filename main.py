@@ -171,7 +171,7 @@ def train(args: Arguments):
                             args.num_samples
                         )
                         sampled_neighboring_nodes, _ = torch.sort(torch.tensor(
-                            np.random.choice(neighbor_nodes, size=args.num_samples, replace=False)))
+                            np.random.choice(neighbor_nodes, size=max(neighbor_nodes.size(0), args.num_samples), replace=False)))
                         # Update batch nodes for next hop
                         batch_nodes = torch.cat([target_nodes,
                                                  sampled_neighboring_nodes],
