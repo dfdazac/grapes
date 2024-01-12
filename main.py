@@ -113,8 +113,8 @@ def train(args: Arguments):
 
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(train_loader):
-                torch.cuda.empty_cache()
-                torch.cuda.reset_peak_memory_stats()
+                # torch.cuda.empty_cache()
+                # torch.cuda.reset_peak_memory_stats()
 
                 target_nodes = batch[0]
 
@@ -163,29 +163,38 @@ def train(args: Arguments):
                     node_logits, _ = gcn_gf(x, local_neighborhoods)
                     # Select logits for neighbor nodes only
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
+                    if args.num_samples >0:
+                        # Sample neighbors using the logits
+                        sampled_neighboring_nodes, log_prob, statistics = sample_neighborhoods_from_probs(
+                            node_logits,
+                            neighbor_nodes,
+                            args.num_samples
+                        )
+                        # Update batch nodes for next hop
+                        batch_nodes = torch.cat([target_nodes,
+                                                 sampled_neighboring_nodes],
+                                                dim=0)
+                        # Retrieve the edge index that results after sampling
+                        k_hop_edges = slice_adjacency(adjacency,
+                                                      rows=previous_nodes,
+                                                      cols=batch_nodes)
+                    else:
+                        sampled_neighboring_nodes = target_nodes
+                        log_prob = torch.empty(neighbor_nodes.size())
+                        statistics = {}
+                        batch_nodes = target_nodes
+                        # Retrieve the edge index that results after sampling
+                        k_hop_edges = torch.cat((batch_nodes.unsqueeze(0), sampled_neighboring_nodes.unsqueeze(0)), dim=0)
 
-                    # Sample neighbors using the logits
-                    sampled_neighboring_nodes, log_prob, statistics = sample_neighborhoods_from_probs(
-                        node_logits,
-                        neighbor_nodes,
-                        args.num_samples
-                    )
+                    # sampled_neighboring_nodes, _ = torch.sort(torch.tensor(
+                    #     np.random.choice(neighbor_nodes, size=args.num_samples, replace=False)))
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
                     log_probs.append(log_prob)
-                    sampled_sizes.append(sampled_neighboring_nodes.shape[0])
+                    # sampled_sizes.append(sampled_neighboring_nodes.shape[0])
                     neighborhood_sizes.append(neighborhoods.shape[-1])
                     all_statistics.append(statistics)
 
-                    # Update batch nodes for next hop
-                    batch_nodes = torch.cat([target_nodes,
-                                             sampled_neighboring_nodes],
-                                            dim=0)
-
-                    # Retrieve the edge index that results after sampling
-                    k_hop_edges = slice_adjacency(adjacency,
-                                                  rows=previous_nodes,
-                                                  cols=batch_nodes)
                     global_edge_indices.append(k_hop_edges)
 
                     # Update the previous_nodes
