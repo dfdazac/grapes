@@ -16,6 +16,7 @@ from modules.data import get_data
 from modules.gcn import GCN
 from modules.utils import (TensorMap, get_logger, get_neighborhoods,
                            sample_neighborhoods_from_probs, slice_adjacency)
+from torch_geometric.utils import homophily
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -118,6 +119,8 @@ def train(args: Arguments):
     for epoch in range(1, args.max_epochs + 1):
         acc_loss_gfn = 0
         acc_loss_c = 0
+        homophily_hop1 = 0
+        homophily_hop2 = 0
         # add a list to collect memory usage
         mem_allocations_point1 = []  # The first point of memory usage measurement after the GCNConv forward pass
         mem_allocations_point2 = []  # The second point of memory usage measurement after the GCNConv backward pass
@@ -190,10 +193,11 @@ def train(args: Arguments):
                                                       cols=batch_nodes)
                         # import pdb; pdb.set_trace()
                     else:
-                        sampled_neighboring_nodes = target_nodes
-                        batch_nodes = target_nodes
-                        # Retrieve the edge index that results after sampling
-                        k_hop_edges = torch.cat((batch_nodes.unsqueeze(0), sampled_neighboring_nodes.unsqueeze(0)), dim=0)
+                        k_hop_edges = neighborhoods
+                        batch_nodes = torch.cat([target_nodes, neighbor_nodes], dim=0)
+                        log_prob = torch.empty(neighbor_nodes.size())
+                        statistics = {}
+                        sampled_neighboring_nodes = neighbor_nodes
 
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
@@ -211,6 +215,9 @@ def train(args: Arguments):
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
+
+                batch_homophily_hop1 = homophily(edge_indices[0], data.y[all_nodes])
+                batch_homophily_hop2 = homophily(edge_indices[1], data.y[all_nodes])
 
                 x = features[all_nodes].to(device)
                 logits, gcn_mem_alloc = gcn_c(x, edge_indices)
@@ -243,6 +250,9 @@ def train(args: Arguments):
 
                 acc_loss_c += batch_loss_c / len(train_loader)
 
+                homophily_hop1 += batch_homophily_hop1 / len(train_loader)
+                homophily_hop2 += batch_homophily_hop2 / len(train_loader)
+
                 bar.set_postfix({'batch_loss_c': batch_loss_c,
                                  'log_z': log_z.item()})
                 bar.update()
@@ -274,7 +284,13 @@ def train(args: Arguments):
             log_dict = {'epoch': epoch,
                         'loss_c': acc_loss_c,
                         'valid_accuracy': accuracy,
-                        'valid_f1': f1}
+                        'valid_f1': f1,
+                        'homophily1': homophily_hop1,
+                        'homophily2': homophily_hop2}
+
+            print("homophily1:", homophily_hop1)
+            print("homophily2:", homophily_hop2)
+
 
             logger.info(f'loss_c={acc_loss_c:.6f}, '
                         f'valid_accuracy={accuracy:.3f}, '
