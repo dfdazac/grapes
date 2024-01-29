@@ -85,7 +85,7 @@ def train(args: Arguments):
         features = data.x
         optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
     else:
-        features = torch.FloatTensor(data.num_nodes, data.num_features).to(device)
+        features = torch.FloatTensor(data.num_nodes, data.num_features)
         nn.init.kaiming_normal_(features, mode='fan_in')
         features = nn.Parameter(features, requires_grad=True)
 
