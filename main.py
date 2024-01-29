@@ -75,7 +75,7 @@ def train(args: Arguments):
                       hidden_dims=[args.hidden_dim, 1]).to(device)
 
     log_z = torch.tensor(args.log_z_init, requires_grad=True)
-    optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
+
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
 
     if data.y.dim() == 1:
@@ -85,9 +85,14 @@ def train(args: Arguments):
 
     if args.input_features:
         features = data.x
+        optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
     else:
-        features = nn.Parameter(torch.FloatTensor(data.num_nodes, data.num_features), requires_grad=True)
+        features = torch.FloatTensor(data.num_nodes, data.num_features).to(device)
         nn.init.kaiming_normal_(features, mode='fan_in')
+        features = nn.Parameter(features, requires_grad=True)
+
+        # Create optimizer
+        optimizer_c = Adam([{'params': gcn_c.parameters()}, {'params': [features]}], lr=args.lr_gc)
 
     train_idx = data.train_mask.nonzero().squeeze(1)
     train_loader = DataLoader(TensorDataset(train_idx), batch_size=args.batch_size)
@@ -126,7 +131,7 @@ def train(args: Arguments):
             for batch_id, batch in enumerate(train_loader):
                 # torch.cuda.empty_cache()
                 # torch.cuda.reset_peak_memory_stats()
-
+                # print("feature_avg:", features.mean(), features.min(), features.max())
                 target_nodes = batch[0]
 
                 previous_nodes = target_nodes.clone()
