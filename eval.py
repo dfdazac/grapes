@@ -9,7 +9,8 @@ from modules.utils import TensorMap, get_logger, get_neighborhoods, slice_adjace
 
 
 @torch.inference_mode()
-def evaluate(gcn_c: torch.nn.Module,
+def evaluate(features: torch.Tensor,
+             gcn_c: torch.nn.Module,
              gcn_gf: torch.nn.Module,
              data: torch_geometric.data.Data,
              args: argparse.Namespace,
@@ -29,7 +30,7 @@ def evaluate(gcn_c: torch.nn.Module,
     """
     get_logger().info('Evaluating')
 
-    x = data.x
+    x = features
     edge_index = data.edge_index
     if eval_on_cpu:
         # move data to CPU
@@ -110,12 +111,12 @@ def evaluate(gcn_c: torch.nn.Module,
                 # Select only the needed rows from the feature and
                 # indicator matrices
                 if args.use_indicators:
-                    x = torch.cat([data.x[batch_nodes],
+                    x = torch.cat([features[batch_nodes],
                                    indicator_features[batch_nodes]],
                                   dim=1
                                   ).to(device)
                 else:
-                    x = data.x[batch_nodes].to(device)
+                    x = features[batch_nodes].to(device)
 
                 # Get probabilities for sampling each node
                 node_logits, _ = gcn_gf(x, local_neighborhoods)
@@ -149,7 +150,7 @@ def evaluate(gcn_c: torch.nn.Module,
             node_map.update(all_nodes)
             edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
-            x = data.x[all_nodes].to(device)
+            x = features[all_nodes].to(device)
             logits_total, _ = gcn_c(x, edge_indices)
             predictions = torch.argmax(logits_total, dim=1)
             predictions = predictions[node_map.map(target_nodes)]  # map back to original node IDs

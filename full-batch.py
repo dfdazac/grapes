@@ -35,6 +35,7 @@ class Arguments(Tap):
     log_z_init: float = 0.
     reg_param: float = 0.
     dropout: float = 0.
+    input_features: bool = False
 
     model_type: str = 'gcn'
     hidden_dim: int = 256
@@ -78,6 +79,12 @@ def train(args: Arguments):
     else:
         loss_fn = nn.BCEWithLogitsLoss()
 
+    if args.input_features:
+        features = data.x
+    else:
+        features = nn.Parameter(torch.FloatTensor(data.num_nodes, data.num_features), requires_grad=True)
+        nn.init.kaiming_normal_(features, mode='fan_in')
+
     train_idx = data.train_mask.nonzero().squeeze(1)
     train_loader = DataLoader(TensorDataset(train_idx), batch_size=args.batch_size)
 
@@ -98,7 +105,7 @@ def train(args: Arguments):
         acc_loss_binom = 0
 
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
-            x = data.x.to(device)
+            x = features.to(device)
             logits, gcn_mem_alloc = gcn_c(x, data.edge_index.to(device))
             loss_c = loss_fn(logits[data.train_mask], data.y[data.train_mask].to(device))
 
@@ -126,7 +133,7 @@ def train(args: Arguments):
                         f'valid_f1={f1:.3f}')
             wandb.log(log_dict)
 
-    x = data.x.to(device)
+    x = features.to(device)
     logits, gcn_mem_alloc = gcn_c(x, data.edge_index.to(device))
     test_predictions = torch.argmax(logits, dim=1)[data.test_mask].cpu()
     targets = data.y[data.test_mask]
