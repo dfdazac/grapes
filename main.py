@@ -209,6 +209,7 @@ def train(args: Arguments):
                         batch_nodes = torch.cat([target_nodes, neighbor_nodes], dim=0)
                         log_prob = torch.empty(neighbor_nodes.size())
                         statistics = {}
+                        sampled_neighboring_nodes = neighbor_nodes
 
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
