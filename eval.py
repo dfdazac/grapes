@@ -4,6 +4,7 @@ import torch
 import torch_geometric
 from sklearn.metrics import accuracy_score, f1_score
 from torch.distributions import Bernoulli
+import numpy as np
 
 from modules.utils import TensorMap, get_logger, get_neighborhoods, slice_adjacency
 
@@ -70,6 +71,7 @@ def evaluate(features: torch.Tensor,
             except ZeroDivisionError:
                 f1 = 0.
     else:
+
         # perform mini-batch message passing for evaluation
         assert loader is not None, 'loader must be provided if full_batch is False'
 
@@ -118,17 +120,22 @@ def evaluate(features: torch.Tensor,
                 else:
                     x = features[batch_nodes].to(device)
 
-                # Get probabilities for sampling each node
-                node_logits, _ = gcn_gf(x, local_neighborhoods)
-                # Select logits for neighbor nodes only
-                node_logits = node_logits[node_map.map(neighbor_nodes)]
+                if gcn_gf.gcn_layers[1].out_channels == 1:
+                    # Get probabilities for sampling each node
+                    node_logits, _ = gcn_gf(x, local_neighborhoods)
+                    # Select logits for neighbor nodes only
+                    node_logits = node_logits[node_map.map(neighbor_nodes)]
 
-                # Sample top k neighbors using the logits
-                b = Bernoulli(logits=node_logits.squeeze())
-                samples = torch.topk(b.probs, k=args.num_samples, dim=0, sorted=False)[1]
-                sample_mask = torch.zeros_like(node_logits.squeeze(), dtype=torch.float)
-                sample_mask[samples] = 1
-                sampled_neighboring_nodes = neighbor_nodes[sample_mask.bool().cpu()]
+                    # Sample top k neighbors using the logits
+                    b = Bernoulli(logits=node_logits.squeeze())
+                    samples = torch.topk(b.probs, k=args.num_samples, dim=0, sorted=False)[1]
+                    sample_mask = torch.zeros_like(node_logits.squeeze(), dtype=torch.float)
+                    sample_mask[samples] = 1
+                    sampled_neighboring_nodes = neighbor_nodes[sample_mask.bool().cpu()]
+                else:
+                    sampled_neighboring_nodes, _ = torch.sort(torch.tensor(
+                        np.random.choice(neighbor_nodes, size=min(neighbor_nodes.size(0), args.num_samples),
+                                         replace=False)))
 
                 all_nodes_mask[sampled_neighboring_nodes] = True
 
