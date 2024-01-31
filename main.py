@@ -131,7 +131,8 @@ def train(args: Arguments):
             for batch_id, batch in enumerate(train_loader):
                 # torch.cuda.empty_cache()
                 # torch.cuda.reset_peak_memory_stats()
-                # print("feature_avg:", features.mean(), features.min(), features.max())
+                print("feature_avg:", features.mean(), features.min(), features.max())
+                print(features[0])
                 target_nodes = batch[0]
 
                 previous_nodes = target_nodes.clone()
@@ -186,10 +187,6 @@ def train(args: Arguments):
                             neighbor_nodes,
                             args.num_samples
                         )
-                        sampled_neighboring_nodes_rn, _ = torch.sort(torch.tensor(
-                            np.random.choice(neighbor_nodes, size=min(neighbor_nodes.size(0), args.num_samples),
-                                             replace=False)))
-
                         # Update batch nodes for next hop
                         batch_nodes = torch.cat([target_nodes,
                                                  sampled_neighboring_nodes],
@@ -250,7 +247,6 @@ def train(args: Arguments):
                 mem_allocations_point3.append(torch.cuda.memory_allocated() / (1024 * 1024))
 
                 loss_c.backward()
-
                 optimizer_c.step()
 
                 optimizer_gf.zero_grad()
@@ -262,7 +258,6 @@ def train(args: Arguments):
                 mem_allocations_point2.append(gcn_mem_alloc)
 
                 loss_gfn.backward()
-
                 optimizer_gf.step()
 
                 batch_loss_gfn = loss_gfn.item()
