@@ -34,7 +34,6 @@ class GCN(nn.Module):
 
         edges = edge_index[0] if layerwise_adjacency else edge_index
         logits = self.gcn_layers[-1](x, edges)
-        logits = F.dropout(logits, p=self.dropout, training=self.training)
 
         # torch.cuda.synchronize()
         memory_alloc = torch.cuda.memory_allocated() / (1024 * 1024)
