@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from eval import evaluate
 from modules.data import get_data
-from modules.gcn import GCN
+from modules.gcn import GCN, MyGCN
 from modules.utils import (TensorMap, get_logger, get_neighborhoods,
                            sample_neighborhoods_from_probs, slice_adjacency)
 from torch_geometric.utils import homophily
@@ -69,9 +69,9 @@ def train(args: Arguments):
         num_indicators = 0
 
     if args.model_type == 'gcn':
-        gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], dropout=args.dropout).to(device)
+        gcn_c = MyGCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], dropout=args.dropout).to(device)
         # GCN model for GFlotNet sampling
-        gcn_gf = GCN(data.num_features + num_indicators,
+        gcn_gf = MyGCN(data.num_features + num_indicators,
                       hidden_dims=[args.hidden_dim, 1]).to(device)
 
     log_z = torch.tensor(args.log_z_init, requires_grad=True)
@@ -92,7 +92,7 @@ def train(args: Arguments):
         features = nn.Parameter(features, requires_grad=True)
 
         # Create optimizer
-        optimizer_c = Adam([{'params': gcn_c.parameters()}, {'params': [features]}], lr=args.lr_gc)
+        optimizer_c = Adam(list(gcn_c.parameters()) + [features], lr=args.lr_gc)
 
     train_idx = data.train_mask.nonzero().squeeze(1)
     train_loader = DataLoader(TensorDataset(train_idx), batch_size=args.batch_size)
@@ -131,8 +131,6 @@ def train(args: Arguments):
             for batch_id, batch in enumerate(train_loader):
                 # torch.cuda.empty_cache()
                 # torch.cuda.reset_peak_memory_stats()
-                print("feature_avg:", features.mean(), features.min(), features.max())
-                print(features[0])
                 target_nodes = batch[0]
 
                 previous_nodes = target_nodes.clone()
@@ -142,13 +140,14 @@ def train(args: Arguments):
                 indicator_features.zero_()
                 indicator_features[target_nodes, -1] = 1.0
 
-                global_edge_indices = []
-                log_probs = []
-                sampled_sizes = []
+                local_edge_indices = []
                 neighborhood_sizes = []
+                sub_adj_size = []
+                log_probs = []
                 all_statistics = []
                 # Sample neighborhoods with the GCN-GF model
                 for hop in range(args.sampling_hops):
+                    local_hop_edges = []
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighborhoods(previous_nodes, adjacency)
 
@@ -163,9 +162,11 @@ def train(args: Arguments):
                     neighbor_nodes = node_map.values[neighbor_nodes_mask]
                     indicator_features[neighbor_nodes, hop] = 1.0
 
+                    neighborhoods_inv = slice_adjacency(adjacency, batch_nodes, batch_nodes)
+                    neighborhoods_inv_sloop = torch.cat([neighborhoods_inv, batch_nodes.repeat(2, 1)], dim=1)
                     # Map neighborhoods to local node IDs
                     node_map.update(batch_nodes)
-                    local_neighborhoods = node_map.map(neighborhoods).to(device)
+                    local_neighborhoods = node_map.map(neighborhoods_inv_sloop).to(device)
                     # Select only the needed rows from the feature and
                     # indicator matrices
                     if args.use_indicators:
@@ -177,7 +178,10 @@ def train(args: Arguments):
                         x = features[batch_nodes].to(device)
 
                     # Get probabilities for sampling each node
-                    node_logits, _ = gcn_gf(x, local_neighborhoods)
+                    node_logits, _ = gcn_gf(x, [[local_neighborhoods[0], local_neighborhoods[1]],
+                                                [local_neighborhoods[0], local_neighborhoods[1]]],
+                                            [(len(batch_nodes), len(batch_nodes)),
+                                             (len(batch_nodes), len(batch_nodes))])
                     # Select logits for neighbor nodes only
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
                     if args.num_samples >0:
@@ -187,6 +191,15 @@ def train(args: Arguments):
                             neighbor_nodes,
                             args.num_samples
                         )
+
+                        # LADIES
+                        # adj_row = adjacency[previous_nodes.squeeze(), :]
+                        # pi = np.array(np.sum(adj_row.multiply(adj_row), axis=0))[0]
+                        # p = pi / np.sum(pi)
+                        # s_num = np.min([np.sum(p > 0), args.num_samples])
+                        # sampled_neighboring_nodes = torch.tensor(np.random.choice(data.num_nodes, s_num, p=p,
+                        #                                                           replace=False))
+
                         # Update batch nodes for next hop
                         batch_nodes = torch.cat([target_nodes,
                                                  sampled_neighboring_nodes],
@@ -205,7 +218,6 @@ def train(args: Arguments):
                                                       rows=previous_nodes,
                                                       cols=batch_nodes)
 
-                        # k_hop_edges = torch.cat((batch_nodes.unsqueeze(0), sampled_neighboring_nodes.unsqueeze(0)), dim=0)
                     else:
                         k_hop_edges = neighborhoods
                         batch_nodes = torch.cat([target_nodes, neighbor_nodes], dim=0)
@@ -213,34 +225,39 @@ def train(args: Arguments):
                         statistics = {}
                         sampled_neighboring_nodes = neighbor_nodes
 
+                    k_hop_edges_w_sloop = torch.cat([k_hop_edges, target_nodes.repeat(2, 1)], dim=1)
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
                     log_probs.append(log_prob)
-                    # sampled_sizes.append(sampled_neighboring_nodes.shape[0])
+                    sub_adj_size.append((len(previous_nodes), len(batch_nodes)))
                     neighborhood_sizes.append(neighborhoods.shape[-1])
+
+                    node_map.update(previous_nodes)
+                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]))
+                    node_map.update(batch_nodes)
+                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[1]))
+                    local_edge_indices.append(local_hop_edges)
+
                     all_statistics.append(statistics)
 
-                    global_edge_indices.append(k_hop_edges)
-
                     # Update the previous_nodes
-                    previous_nodes = batch_nodes.clone()
+                    if hop < args.sampling_hops - 1:
+                        previous_nodes = batch_nodes.clone()
 
                 # Converting global indices to the local of final batch_nodes.
                 # The final batch_nodes are the nodes sampled from the second
                 # hop concatenated with the target nodes
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
-                edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
-                batch_homophily_hop1 = homophily(edge_indices[0], data.y[all_nodes])
-                batch_homophily_hop2 = homophily(edge_indices[1], data.y[all_nodes])
+                # batch_homophily_hop1 = homophily(local_edge_indices[0], data.y[all_nodes])
+                # batch_homophily_hop2 = homophily(edge_indices[1], data.y[all_nodes])
 
-                x = features[all_nodes].to(device)
-                logits, gcn_mem_alloc = gcn_c(x, edge_indices)
+                x = features[batch_nodes].to(device)
+                logits, gcn_mem_alloc = gcn_c(x, local_edge_indices, sub_adj_size)
 
-                local_target_ids = node_map.map(target_nodes)
-                loss_c = loss_fn(logits[local_target_ids],
-                                 data.y[target_nodes].to(device)) + args.reg_param*torch.sum(torch.var(logits, dim=1))
+                loss_c = loss_fn(logits,
+                                 data.y[target_nodes].to(device)) + args.reg_param * torch.sum(torch.var(logits, dim=1))
 
                 optimizer_c.zero_grad()
 
@@ -277,8 +294,8 @@ def train(args: Arguments):
                 acc_loss_gfn += batch_loss_gfn / len(train_loader)
                 acc_loss_c += batch_loss_c / len(train_loader)
 
-                homophily_hop1 += batch_homophily_hop1/len(train_loader)
-                homophily_hop2 += batch_homophily_hop2 / len(train_loader)
+                homophily_hop1 += 0 #batch_homophily_hop1/len(train_loader)
+                homophily_hop2 += 0 #batch_homophily_hop2 / len(train_loader)
 
 
                 bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,

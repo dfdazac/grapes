@@ -49,7 +49,8 @@ def evaluate(features: torch.Tensor,
     if full_batch:
         # perform full batch message passing for evaluation
 
-        logits_total, _ = gcn_c(x, edge_index)
+        logits_total, _ = gcn_c(x, [[edge_index[0], edge_index[1]], [edge_index[0], edge_index[1]]],
+                                [(data.num_nodes,data.num_nodes),(data.num_nodes,data.num_nodes)])
         if data.y[mask].dim() == 1:
             predictions = torch.argmax(logits_total, dim=1)[mask].cpu()
             targets = data.y[mask]

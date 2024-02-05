@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from eval import evaluate
 from modules.data import get_data
-from modules.gcn import GCN
+from modules.gcn import GCN, MyGCN
 from modules.utils import (TensorMap, get_logger, get_neighborhoods,
                            sample_neighborhoods_from_probs, slice_adjacency)
 from torch_geometric.utils import homophily
@@ -69,7 +69,7 @@ def train(args: Arguments):
         num_indicators = 0
 
     if args.model_type == 'gcn':
-        gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], dropout=args.dropout).to(device)
+        gcn_c = MyGCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], dropout=args.dropout).to(device)
         # GCN model for GFlotNet sampling
         gcn_gf = GCN(data.num_features + num_indicators,
                  hidden_dims=[args.hidden_dim, 1]).to(device)
@@ -91,7 +91,7 @@ def train(args: Arguments):
         features = nn.Parameter(features, requires_grad=True)
 
         # Create optimizer
-        optimizer_c = Adam([{'params': gcn_c.parameters()}, {'params': [features]}], lr=args.lr_gc)
+        optimizer_c = Adam(list(gcn_c.parameters())+[features], lr=args.lr_gc)
 
     train_idx = data.train_mask.nonzero().squeeze(1)
     train_loader = DataLoader(TensorDataset(train_idx), batch_size=args.batch_size)
@@ -140,13 +140,12 @@ def train(args: Arguments):
                 indicator_features.zero_()
                 indicator_features[target_nodes, -1] = 1.0
 
-                global_edge_indices = []
-                log_probs = []
-                sampled_sizes = []
+                local_edge_indices = []
                 neighborhood_sizes = []
-                all_statistics = []
+                sub_adj_size = []
                 # Sample neighborhoods with the GCN-GF model
                 for hop in range(args.sampling_hops):
+                    local_hop_edges = []
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighborhoods(previous_nodes, adjacency)
 
@@ -159,7 +158,6 @@ def train(args: Arguments):
 
                     batch_nodes = node_map.values[batch_nodes_mask]
                     neighbor_nodes = node_map.values[neighbor_nodes_mask]
-
 
                     # Map neighborhoods to local node IDs
                     node_map.update(batch_nodes)
@@ -175,9 +173,6 @@ def train(args: Arguments):
                         x = features[batch_nodes].to(device)
 
                     # Get probabilities for sampling each node
-                    node_logits, _ = gcn_gf(x, local_neighborhoods)
-                    # Select logits for neighbor nodes only
-                    node_logits = node_logits[node_map.map(neighbor_nodes)]
                     if args.num_samples >0:
                         sampled_neighboring_nodes, _ = torch.sort(torch.tensor(
                             np.random.choice(neighbor_nodes, size=min(neighbor_nodes.size(0), args.num_samples),
@@ -191,20 +186,25 @@ def train(args: Arguments):
                         k_hop_edges = slice_adjacency(adjacency,
                                                       rows=previous_nodes,
                                                       cols=batch_nodes)
-                        # import pdb; pdb.set_trace()
+                        k_hop_edges_w_sloop = torch.cat([k_hop_edges, target_nodes.repeat(2, 1)], dim=1)
                     else:
                         k_hop_edges = neighborhoods
+                        k_hop_edges_w_sloop = torch.cat([k_hop_edges, target_nodes.repeat(2, 1)], dim=1)
+
                         batch_nodes = torch.cat([target_nodes, neighbor_nodes], dim=0)
-                        log_prob = torch.empty(neighbor_nodes.size())
-                        statistics = {}
                         sampled_neighboring_nodes = neighbor_nodes
 
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
                     # sampled_sizes.append(sampled_neighboring_nodes.shape[0])
+                    sub_adj_size.append((len(previous_nodes), len(batch_nodes)))
                     neighborhood_sizes.append(neighborhoods.shape[-1])
 
-                    global_edge_indices.append(k_hop_edges)
+                    node_map.update(previous_nodes)
+                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]))
+                    node_map.update(batch_nodes)
+                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[1]))
+                    local_edge_indices.append(local_hop_edges)
 
                     # Update the previous_nodes
                     previous_nodes = batch_nodes.clone()
@@ -214,18 +214,18 @@ def train(args: Arguments):
                 # hop concatenated with the target nodes
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
-                edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
+                # edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
-                batch_homophily_hop1 = homophily(edge_indices[0], data.y[all_nodes])
-                batch_homophily_hop2 = homophily(edge_indices[1], data.y[all_nodes])
+                batch_homophily_hop1 = homophily(local_edge_indices[0], data.y[all_nodes])
+                batch_homophily_hop2 = homophily(local_edge_indices[1], data.y[all_nodes])
 
-                x = features[all_nodes].to(device)
-                logits, gcn_mem_alloc = gcn_c(x, edge_indices)
+                x = features[batch_nodes].to(device)
+                logits, gcn_mem_alloc = gcn_c(x, local_edge_indices, sub_adj_size)
 
                 local_target_ids = node_map.map(target_nodes)
-                loss_c = loss_fn(logits[local_target_ids],
+                loss_c = loss_fn(logits,
                                  data.y[target_nodes].to(device)) + args.reg_param*torch.sum(torch.var(logits, dim=1))
-
+                print("features for all x:", features[all_nodes])
                 optimizer_c.zero_grad()
 
                 mem_allocations_point3.append(torch.cuda.memory_allocated() / (1024 * 1024))
@@ -236,7 +236,7 @@ def train(args: Arguments):
 
                 mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
                 mem_allocations_point2.append(gcn_mem_alloc)
-
+                print("features for all x:", features[all_nodes])
 
                 batch_loss_c = loss_c.item()
 

@@ -3,7 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv, GCN2Conv, GCNConv, Linear,  PNAConv
+from torch_geometric.nn import GATConv, GCN2Conv, GCNConv, Linear,  PNAConv, MessagePassing
 
 
 class GCN(nn.Module):
@@ -16,14 +16,14 @@ class GCN(nn.Module):
         gcn_layers = []
         for i in range(len(hidden_dims) - 1):
             gcn_layers.append(GCNConv(in_channels=dims[i],
-                                      out_channels=dims[i + 1]))
+                                        out_channels=dims[i + 1]))
 
         gcn_layers.append(GCNConv(in_channels=dims[-2], out_channels=dims[-1]))
         self.gcn_layers = nn.ModuleList(gcn_layers)
 
     def forward(self,
                 x: torch.Tensor,
-                edge_index: Union[torch.Tensor, list[torch.Tensor]],
+                edge_index: Union[torch.Tensor, list[torch.Tensor]]
                 ) -> torch.Tensor:
         layerwise_adjacency = type(edge_index) == list
 
@@ -34,6 +34,41 @@ class GCN(nn.Module):
 
         edges = edge_index[0] if layerwise_adjacency else edge_index
         logits = self.gcn_layers[-1](x, edges)
+
+        # torch.cuda.synchronize()
+        memory_alloc = torch.cuda.memory_allocated() / (1024 * 1024)
+
+        return logits, memory_alloc
+
+
+class MyGCN(nn.Module):
+    def __init__(self,
+                 in_features: int,
+                 hidden_dims: list[int], dropout: float=0.):
+        super(MyGCN, self).__init__()
+        self.dropout = dropout
+        dims = [in_features] + hidden_dims
+        gcn_layers = []
+        for i in range(len(hidden_dims) - 1):
+            gcn_layers.append(MyGCNConv(in_channels=dims[i],
+                                        out_channels=dims[i + 1]))
+
+        gcn_layers.append(MyGCNConv(in_channels=dims[-2], out_channels=dims[-1]))
+        self.gcn_layers = nn.ModuleList(gcn_layers)
+
+    def forward(self,
+                x: torch.Tensor,
+                edge_index: Union[torch.Tensor, list[torch.Tensor]], size,
+                ) -> torch.Tensor:
+        layerwise_adjacency = type(edge_index) == list
+
+        for i, layer in enumerate(self.gcn_layers[:-1], start=1):
+            edges = edge_index[-i] if layerwise_adjacency else edge_index
+            x = torch.relu(layer(x, edges, size[-1]))
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        edges = edge_index[0] if layerwise_adjacency else edge_index
+        logits = self.gcn_layers[-1](x, edges, size[0])
 
         # torch.cuda.synchronize()
         memory_alloc = torch.cuda.memory_allocated() / (1024 * 1024)
@@ -146,4 +181,55 @@ class PNA(nn.Module):
 
         x = self.convs[-1](x,edge_index[-1])
         return x
+
+
+
+class MyGCNConv(nn.Module):
+    def __init__(self,
+                 in_channels: int,
+                 out_channels: int):
+        super(MyGCNConv, self).__init__()
+
+        self.w = nn.Parameter(torch.FloatTensor(in_channels, out_channels))
+        # nn.init.xavier_uniform_(self.w)
+
+        self.bias = nn.Parameter(torch.empty(out_channels))
+        # nn.init.xavier_uniform_(self.bias)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.xavier_uniform_(self.w)
+        nn.init.zeros_(self.bias)
+
+    def forward(self, x, edge_index, size):
+        row, col = edge_index
+        A = torch.sparse_coo_tensor(torch.stack(edge_index), torch.ones(edge_index[0].size()), size)
+        deg = torch.sparse.sum(A, dim=1).to_dense()
+        deg_inv_sqrt = deg.pow(-0.5)
+        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+
+        # A_norm = torch.sparse_coo_tensor(torch.arange(size[0]).repeat(2,1), deg_inv_sqrt[row.unique()]) @ A @ \
+        #          torch.sparse_coo_tensor(torch.arange(size[1]).repeat(2,1), deg_inv_sqrt[col.unique()])
+        A_norm = torch.sparse_coo_tensor(torch.arange(size[0]).repeat(2,1), deg_inv_sqrt) @ A
+        x = torch.spmm(A_norm, x)
+        out = torch.matmul(x, self.w)
+        out += self.bias
+
+        return out
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
