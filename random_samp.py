@@ -63,19 +63,8 @@ def train(args: Arguments):
 
     node_map = TensorMap(size=data.num_nodes)
 
-    if args.use_indicators:
-        num_indicators = args.sampling_hops + 1
-    else:
-        num_indicators = 0
-
     if args.model_type == 'gcn':
-        gcn_c = MyGCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], dropout=args.dropout).to(device)
-        # GCN model for GFlotNet sampling
-        gcn_gf = GCN(data.num_features + num_indicators,
-                 hidden_dims=[args.hidden_dim, 1]).to(device)
-
-    log_z = torch.tensor(args.log_z_init, requires_grad=True)
-
+        gcn_c = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes], dropout=args.dropout).to(device)
 
     if data.y.dim() == 1:
         loss_fn = nn.CrossEntropyLoss()
@@ -108,40 +97,21 @@ def train(args: Arguments):
 
     prev_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
     batch_nodes_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
-    indicator_features = torch.zeros((data.num_nodes, num_indicators))
-
-    # This will collect memory allocations for all epochs
-    all_mem_allocations_point1 = []
-    all_mem_allocations_point2 = []
-    all_mem_allocations_point3 = []
 
     logger.info('Training')
     for epoch in range(1, args.max_epochs + 1):
-        acc_loss_gfn = 0
         acc_loss_c = 0
         homophily_hop1 = 0
         homophily_hop2 = 0
-        # add a list to collect memory usage
-        mem_allocations_point1 = []  # The first point of memory usage measurement after the GCNConv forward pass
-        mem_allocations_point2 = []  # The second point of memory usage measurement after the GCNConv backward pass
-        mem_allocations_point3 = []  # The third point of memory usage measurement after the GCNConv backward pass
-
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(train_loader):
-                # torch.cuda.empty_cache()
-                # torch.cuda.reset_peak_memory_stats()
-
                 target_nodes = batch[0]
 
                 previous_nodes = target_nodes.clone()
                 all_nodes_mask = torch.zeros_like(prev_nodes_mask)
                 all_nodes_mask[target_nodes] = True
 
-                indicator_features.zero_()
-                indicator_features[target_nodes, -1] = 1.0
-
                 local_edge_indices = []
-                neighborhood_sizes = []
                 sub_adj_size = []
                 global_edge_indices = []
                 # Sample neighborhoods with the GCN-GF model
@@ -159,19 +129,6 @@ def train(args: Arguments):
 
                     batch_nodes = node_map.values[batch_nodes_mask]
                     neighbor_nodes = node_map.values[neighbor_nodes_mask]
-
-                    # Map neighborhoods to local node IDs
-                    node_map.update(batch_nodes)
-                    local_neighborhoods = node_map.map(neighborhoods).to(device)
-                    # Select only the needed rows from the feature and
-                    # indicator matrices
-                    if args.use_indicators:
-                        x = torch.cat([features[batch_nodes],
-                                       indicator_features[batch_nodes]],
-                                      dim=1
-                                      ).to(device)
-                    else:
-                        x = features[batch_nodes].to(device)
 
                     # Get probabilities for sampling each node
                     if args.num_samples >0:
@@ -201,7 +158,6 @@ def train(args: Arguments):
 
                     # sampled_sizes.append(sampled_neighboring_nodes.shape[0])
                     sub_adj_size.append((len(previous_nodes), len(batch_nodes)))
-                    neighborhood_sizes.append(neighborhoods.shape[-1])
 
                     node_map.update(previous_nodes)
                     local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]).to(device))
@@ -219,49 +175,33 @@ def train(args: Arguments):
                 node_map.update(all_nodes)
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
-                batch_homophily_hop1 = 0 #homophily(local_edge_indices[0], data.y[all_nodes])
-                batch_homophily_hop2 = 0 #homophily(local_edge_indices[1], data.y[all_nodes])
+                batch_homophily_hop1 = homophily(edge_indices[0], data.y[all_nodes])
+                batch_homophily_hop2 = homophily(edge_indices[1], data.y[all_nodes])
 
-                # x = features[all_nodes].to(device)
-                x = features[batch_nodes].to(device)
-                logits, gcn_mem_alloc = gcn_c(x, local_edge_indices, sub_adj_size)
+                x = features[all_nodes].to(device)
+                # x = features[batch_nodes].to(device)
+                logits, gcn_mem_alloc = gcn_c(x, edge_indices) #local_edge_indices, sub_adj_size)
 
                 local_target_ids = node_map.map(target_nodes)
-                loss_c = loss_fn(logits,
-                                 data.y[target_nodes].to(device)) + args.reg_param*torch.sum(torch.var(logits, dim=1))
+                loss_c = loss_fn(logits[local_target_ids], data.y[target_nodes].to(device))
 
                 optimizer_c.zero_grad()
-                mem_allocations_point3.append(torch.cuda.memory_allocated() / (1024 * 1024))
                 loss_c.backward()
                 optimizer_c.step()
-
-                mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
-                mem_allocations_point2.append(gcn_mem_alloc)
 
                 batch_loss_c = loss_c.item()
 
                 wandb.log({'batch_loss_c': batch_loss_c})
-
-                # stats_log_dict = {}
-                # for i, statistics in enumerate(all_statistics):
-                #     for key, value in statistics.items():
-                #         stats_log_dict[f"{key}_{i}"] = value
-                # wandb.log(stats_log_dict)
 
                 acc_loss_c += batch_loss_c / len(train_loader)
 
                 homophily_hop1 += batch_homophily_hop1 / len(train_loader)
                 homophily_hop2 += batch_homophily_hop2 / len(train_loader)
 
-                bar.set_postfix({'batch_loss_c': batch_loss_c,
-                                 'log_z': log_z.item()})
+                bar.set_postfix({'batch_loss_c': batch_loss_c})
                 bar.update()
 
         bar.close()
-
-        all_mem_allocations_point1.extend(mem_allocations_point1)
-        all_mem_allocations_point2.extend(mem_allocations_point2)
-        all_mem_allocations_point3.extend(mem_allocations_point3)
 
         if (epoch + 1) % args.eval_frequency == 0:
             accuracy, f1 = evaluate(features,
@@ -271,7 +211,7 @@ def train(args: Arguments):
                                     args,
                                     adjacency,
                                     node_map,
-                                    num_indicators,
+                                    0,
                                     device,
                                     data.val_mask,
                                     args.eval_on_cpu,
@@ -291,7 +231,6 @@ def train(args: Arguments):
             print("homophily1:", homophily_hop1)
             print("homophily2:", homophily_hop2)
 
-
             logger.info(f'loss_c={acc_loss_c:.6f}, '
                         f'valid_accuracy={accuracy:.3f}, '
                         f'valid_f1={f1:.3f}')
@@ -304,7 +243,7 @@ def train(args: Arguments):
                                       args,
                                       adjacency,
                                       node_map,
-                                      num_indicators,
+                                      0,
                                       device,
                                       data.test_mask,
                                       args.eval_on_cpu,
@@ -314,7 +253,7 @@ def train(args: Arguments):
                'test_f1': test_f1})
     logger.info(f'test_accuracy={test_accuracy:.3f}, '
                 f'test_f1={test_f1:.3f}')
-    return test_f1, all_mem_allocations_point1, all_mem_allocations_point2, all_mem_allocations_point3
+    return test_f1, 0, 0, 0
 
 
 args = Arguments(explicit_bool=True).parse_args()
