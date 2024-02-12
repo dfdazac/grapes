@@ -204,15 +204,15 @@ class MyGCNConv(nn.Module):
 
     def forward(self, x, edge_index, size):
         row, col = edge_index
-        A = torch.sparse_coo_tensor(torch.stack(edge_index), torch.ones(edge_index[0].size()), size)
+        A = torch.sparse_coo_tensor(torch.stack(edge_index), torch.ones(edge_index[0].size()).to(x.device), size)
         deg = torch.sparse.sum(A, dim=1).to_dense()
         deg_inv_sqrt = deg.pow(-0.5)
         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
 
         # A_norm = torch.sparse_coo_tensor(torch.arange(size[0]).repeat(2,1), deg_inv_sqrt[row.unique()]) @ A @ \
         #          torch.sparse_coo_tensor(torch.arange(size[1]).repeat(2,1), deg_inv_sqrt[col.unique()])
-        A_norm = torch.sparse_coo_tensor(torch.arange(size[0]).repeat(2,1), deg_inv_sqrt) @ A
-        x = torch.spmm(A_norm, x)
+        A = torch.sparse.mm(torch.sparse_coo_tensor(torch.arange(size[0]).repeat(2,1).to(x.device), deg_inv_sqrt), A)
+        x = torch.spmm(A, x)
         out = torch.matmul(x, self.w)
         out += self.bias
 

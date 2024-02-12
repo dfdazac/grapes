@@ -204,9 +204,9 @@ def train(args: Arguments):
                     neighborhood_sizes.append(neighborhoods.shape[-1])
 
                     node_map.update(previous_nodes)
-                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]))
+                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]).to(device))
                     node_map.update(batch_nodes)
-                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[1]))
+                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[1]).to(device))
                     local_edge_indices.append(local_hop_edges)
 
                     # Update the previous_nodes
@@ -219,8 +219,8 @@ def train(args: Arguments):
                 node_map.update(all_nodes)
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
-                batch_homophily_hop1 = homophily(local_edge_indices[0], data.y[all_nodes])
-                batch_homophily_hop2 = homophily(local_edge_indices[1], data.y[all_nodes])
+                batch_homophily_hop1 = 0 #homophily(local_edge_indices[0], data.y[all_nodes])
+                batch_homophily_hop2 = 0 #homophily(local_edge_indices[1], data.y[all_nodes])
 
                 # x = features[all_nodes].to(device)
                 x = features[batch_nodes].to(device)

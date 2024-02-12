@@ -251,9 +251,9 @@ def train(args: Arguments):
                     neighborhood_sizes.append(neighborhoods.shape[-1])
 
                     node_map.update(previous_nodes)
-                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]))
+                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]).to(device))
                     node_map.update(batch_nodes)
-                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[1]))
+                    local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[1]).to(device))
                     local_edge_indices.append(local_hop_edges)
 
                     all_statistics.append(statistics)
