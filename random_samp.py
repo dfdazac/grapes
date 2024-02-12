@@ -253,7 +253,7 @@ def train(args: Arguments):
                'test_f1': test_f1})
     logger.info(f'test_accuracy={test_accuracy:.3f}, '
                 f'test_f1={test_f1:.3f}')
-    return test_f1, 0, 0, 0
+    return test_f1, [], [], []
 
 
 args = Arguments(explicit_bool=True).parse_args()
