@@ -143,6 +143,7 @@ def train(args: Arguments):
                 local_edge_indices = []
                 neighborhood_sizes = []
                 sub_adj_size = []
+                global_edge_indices = []
                 # Sample neighborhoods with the GCN-GF model
                 for hop in range(args.sampling_hops):
                     local_hop_edges = []
@@ -196,6 +197,8 @@ def train(args: Arguments):
 
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
+                    global_edge_indices.append(k_hop_edges)
+
                     # sampled_sizes.append(sampled_neighboring_nodes.shape[0])
                     sub_adj_size.append((len(previous_nodes), len(batch_nodes)))
                     neighborhood_sizes.append(neighborhoods.shape[-1])
@@ -214,29 +217,26 @@ def train(args: Arguments):
                 # hop concatenated with the target nodes
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
-                # edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
+                edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
                 batch_homophily_hop1 = homophily(local_edge_indices[0], data.y[all_nodes])
                 batch_homophily_hop2 = homophily(local_edge_indices[1], data.y[all_nodes])
 
+                # x = features[all_nodes].to(device)
                 x = features[batch_nodes].to(device)
                 logits, gcn_mem_alloc = gcn_c(x, local_edge_indices, sub_adj_size)
 
                 local_target_ids = node_map.map(target_nodes)
                 loss_c = loss_fn(logits,
                                  data.y[target_nodes].to(device)) + args.reg_param*torch.sum(torch.var(logits, dim=1))
-                print("features for all x:", features[all_nodes])
+
                 optimizer_c.zero_grad()
-
                 mem_allocations_point3.append(torch.cuda.memory_allocated() / (1024 * 1024))
-
                 loss_c.backward()
-
                 optimizer_c.step()
 
                 mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
                 mem_allocations_point2.append(gcn_mem_alloc)
-                print("features for all x:", features[all_nodes])
 
                 batch_loss_c = loss_c.item()
 
