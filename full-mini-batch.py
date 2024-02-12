@@ -122,18 +122,12 @@ def train(args: Arguments):
                     neighbor_nodes_mask = batch_nodes_mask & ~prev_nodes_mask
 
                     batch_nodes = node_map.values[batch_nodes_mask]
-                    neighbor_nodes = node_map.values[neighbor_nodes_mask]
-
-                    # Map neighborhoods to local node IDs
-                    node_map.update(batch_nodes)
-                    local_neighborhoods = node_map.map(neighborhoods).to(device)
 
                     # Retrieve the edge index that results after sampling
                     k_hop_edges = slice_adjacency(adjacency,
                                                   rows=previous_nodes,
                                                   cols=batch_nodes)
                     k_hop_edges_w_sloop = torch.cat([k_hop_edges, target_nodes.repeat(2,1)], dim=1)
-                    # import pdb; pdb.set_trace()
 
                     all_nodes_mask[batch_nodes] = True
 
@@ -155,23 +149,18 @@ def train(args: Arguments):
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
 
-
                 batch_homophily_hop1 = homophily(local_edge_indices[0], data.y[all_nodes])
                 batch_homophily_hop2 = homophily(local_edge_indices[1], data.y[all_nodes])
 
                 x = features[batch_nodes].to(device)
                 logits, gcn_mem_alloc = gcn_c(x, local_edge_indices, sub_adj_size)
 
-                local_target_ids = node_map.map(target_nodes)
                 loss_c = loss_fn(logits, data.y[target_nodes].to(device))
-                print("features for all x before:", features[all_nodes])
-                feature1 = features[all_nodes]
+
                 optimizer_c.zero_grad()
                 loss_c.backward()
                 optimizer_c.step()
 
-                print("features for all x after:", features[all_nodes])
-                feature2 = features[all_nodes]
                 batch_loss_c = loss_c.item()
 
                 wandb.log({'batch_loss_c': batch_loss_c})
@@ -213,7 +202,6 @@ def train(args: Arguments):
 
             print("homophily1:", homophily_hop1)
             print("homophily2:", homophily_hop2)
-
 
             logger.info(f'loss_c={acc_loss_c:.6f}, '
                         f'valid_accuracy={accuracy:.3f}, '
