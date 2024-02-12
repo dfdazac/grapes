@@ -48,7 +48,7 @@ def evaluate(features: torch.Tensor,
 
     if full_batch:
         # perform full batch message passing for evaluation
-
+        edge_index = torch.cat([edge_index, torch.arange(data.num_nodes).repeat(2, 1)], dim=1)
         logits_total, _ = gcn_c(x, [[edge_index[0], edge_index[1]], [edge_index[0], edge_index[1]]],
                                 [(data.num_nodes,data.num_nodes),(data.num_nodes,data.num_nodes)])
         if data.y[mask].dim() == 1:
@@ -91,9 +91,11 @@ def evaluate(features: torch.Tensor,
             indicator_features[target_nodes, -1] = 1.0
 
             global_edge_indices = []
-
+            local_edge_indices = []
+            sub_adj_size = []
             # Sample neighborhoods with the GCN-GF model
             for hop in range(args.sampling_hops):
+                local_hop_edges = []
                 # Get neighborhoods of target nodes in batch
                 neighborhoods = get_neighborhoods(previous_nodes, adjacency)
 
@@ -108,8 +110,11 @@ def evaluate(features: torch.Tensor,
                 neighbor_nodes = node_map.values[neighbor_nodes_mask]
                 indicator_features[neighbor_nodes, hop] = 1.0
 
+                # neighborhoods_inv = slice_adjacency(adjacency, batch_nodes, batch_nodes)
+                # neighborhoods_inv_sloop = torch.cat([neighborhoods_inv, batch_nodes.repeat(2, 1)], dim=1)
                 # Map neighborhoods to local node IDs
                 node_map.update(batch_nodes)
+                # local_neighborhoods = node_map.map(neighborhoods_inv_sloop).to(device)
                 local_neighborhoods = node_map.map(neighborhoods).to(device)
                 # Select only the needed rows from the feature and
                 # indicator matrices
@@ -123,7 +128,10 @@ def evaluate(features: torch.Tensor,
 
                 if gcn_gf.gcn_layers[1].out_channels == 1:
                     # Get probabilities for sampling each node
-                    node_logits, _ = gcn_gf(x, local_neighborhoods)
+                    node_logits, _ = gcn_gf(x, local_neighborhoods)#[[local_neighborhoods[0], local_neighborhoods[1]],
+                                                #[local_neighborhoods[0], local_neighborhoods[1]]],
+                                            #[(len(batch_nodes), len(batch_nodes)),
+                                            # (len(batch_nodes), len(batch_nodes))])
                     # Select logits for neighbor nodes only
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
 
@@ -133,6 +141,14 @@ def evaluate(features: torch.Tensor,
                     sample_mask = torch.zeros_like(node_logits.squeeze(), dtype=torch.float)
                     sample_mask[samples] = 1
                     sampled_neighboring_nodes = neighbor_nodes[sample_mask.bool().cpu()]
+
+                    ## LADIES
+                    # adj_row = adjacency[previous_nodes.squeeze(), :]
+                    # pi = np.array(np.sum(adj_row.multiply(adj_row), axis=0))[0]
+                    # p = pi / np.sum(pi)
+                    # s_num = np.min([np.sum(p > 0), args.num_samples])
+                    # sampled_neighboring_nodes = torch.tensor(np.random.choice(data.num_nodes, s_num, p=p,
+                    #                                                           replace=False))
                 else:
                     sampled_neighboring_nodes, _ = torch.sort(torch.tensor(
                         np.random.choice(neighbor_nodes, size=min(neighbor_nodes.size(0), args.num_samples),
@@ -150,7 +166,14 @@ def evaluate(features: torch.Tensor,
                                               rows=previous_nodes,
                                               cols=batch_nodes)
                 global_edge_indices.append(k_hop_edges)
+                k_hop_edges_w_sloop = torch.cat([k_hop_edges, target_nodes.repeat(2, 1)], dim=1)
+                sub_adj_size.append((len(previous_nodes), len(batch_nodes)))
 
+                node_map.update(previous_nodes)
+                local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]))
+                node_map.update(batch_nodes)
+                local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[1]))
+                local_edge_indices.append(local_hop_edges)
                 # Update the previous_nodes
                 previous_nodes = batch_nodes.clone()
 
@@ -159,7 +182,8 @@ def evaluate(features: torch.Tensor,
             edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
             x = features[all_nodes].to(device)
-            logits_total, _ = gcn_c(x, edge_indices)
+            # x = features[batch_nodes].to(device)
+            logits_total, _ = gcn_c(x, edge_indices) #local_edge_indices, sub_adj_size)
             predictions = torch.argmax(logits_total, dim=1)
             predictions = predictions[node_map.map(target_nodes)]  # map back to original node IDs
 
