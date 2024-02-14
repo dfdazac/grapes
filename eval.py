@@ -124,7 +124,7 @@ def evaluate(gcn_c: torch.nn.Module,
 
                 # Sample top k neighbors using the logits
                 b = Bernoulli(logits=node_logits.squeeze())
-                samples = torch.topk(b.probs, k=min(neighborhoods.size(0), args.num_samples), dim=0, sorted=False)[1]
+                samples = torch.topk(b.probs, k=min(neighbor_nodes.size(0), args.num_samples), dim=0, sorted=False)[1]
                 sample_mask = torch.zeros_like(node_logits.squeeze(), dtype=torch.float)
                 sample_mask[samples] = 1
                 sampled_neighboring_nodes = neighbor_nodes[sample_mask.bool().cpu()]
