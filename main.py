@@ -115,21 +115,21 @@ def train(args: Arguments):
     all_mem_allocations_point2 = []
     all_mem_allocations_point3 = []
 
-    pred = torch.empty(data.num_nodes)
-    for i in test_idx:
-        # pdb.set_trace()
-        target_idx = (data.edge_index[0] == i)
-        neighbors = data.edge_index[1][target_idx]
-        y_neighbors = data.y[neighbors]
-        el, cnt = torch.unique(y_neighbors, return_counts=True)
-        if cnt.numel() == 0:
-            labels, cnt_labels = torch.unique(data.y[data.test_mask], return_counts=True)
-            pred[i] = labels[cnt_labels.argmax()]
-        else:
-            pred[i] = el[cnt.argmax()]
-
-    print(int((pred[data.test_mask] == data.y[data.test_mask]).sum()) / int(data.test_mask.sum()))
-    pdb.set_trace()
+    # pred = torch.empty(data.num_nodes)
+    # for i in test_idx:
+    #     # pdb.set_trace()
+    #     target_idx = (data.edge_index[0] == i)
+    #     neighbors = data.edge_index[1][target_idx]
+    #     y_neighbors = data.y[neighbors]
+    #     el, cnt = torch.unique(y_neighbors, return_counts=True)
+    #     if cnt.numel() == 0:
+    #         labels, cnt_labels = torch.unique(data.y[data.test_mask], return_counts=True)
+    #         pred[i] = labels[cnt_labels.argmax()]
+    #     else:
+    #         pred[i] = el[cnt.argmax()]
+    #
+    # print(int((pred[data.test_mask] == data.y[data.test_mask]).sum()) / int(data.test_mask.sum()))
+    # pdb.set_trace()
     logger.info('Training')
     for epoch in range(1, args.max_epochs + 1):
         acc_loss_gfn = 0
@@ -178,11 +178,13 @@ def train(args: Arguments):
                     indicator_features[neighbor_nodes, hop] = 1.0
 
                     neighborhoods_inv = slice_adjacency(adjacency, batch_nodes, batch_nodes)
-                    neighborhoods_inv_sloop = torch.cat([neighborhoods_inv, batch_nodes.repeat(2, 1)], dim=1)
+                    # neighborhoods_inv_sloop = torch.cat([neighborhoods_inv, batch_nodes.repeat(2, 1)], dim=1)
+                    # neighborhoods_sloop = torch.cat([neighborhoods, batch_nodes.repeat(2, 1)], dim=1)
                     # Map neighborhoods to local node IDs
                     node_map.update(batch_nodes)
                     # local_neighborhoods = node_map.map(neighborhoods_inv_sloop).to(device)
                     local_neighborhoods = node_map.map(neighborhoods).to(device)
+                    # local_neighborhoods = node_map.map(neighborhoods_sloop).to(device)
                     # Select only the needed rows from the feature and
                     # indicator matrices
                     if args.use_indicators:
@@ -268,8 +270,8 @@ def train(args: Arguments):
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
-                # batch_homophily_hop1 = homophily(local_edge_indices[0], data.y[all_nodes])
-                # batch_homophily_hop2 = homophily(edge_indices[1], data.y[all_nodes])
+                batch_homophily_hop1 = homophily(edge_indices[0], data.y[all_nodes])
+                batch_homophily_hop2 = homophily(edge_indices[1], data.y[all_nodes])
 
                 x = features[all_nodes].to(device)
                 # x = features[batch_nodes].to(device)
@@ -314,9 +316,8 @@ def train(args: Arguments):
                 acc_loss_gfn += batch_loss_gfn / len(train_loader)
                 acc_loss_c += batch_loss_c / len(train_loader)
 
-                homophily_hop1 += 0 #batch_homophily_hop1/len(train_loader)
-                homophily_hop2 += 0 #batch_homophily_hop2 / len(train_loader)
-
+                homophily_hop1 += batch_homophily_hop1/len(train_loader)
+                homophily_hop2 += batch_homophily_hop2 / len(train_loader)
 
                 bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,
                                  'batch_loss_c': batch_loss_c,
