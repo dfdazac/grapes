@@ -35,9 +35,11 @@ def evaluate(features: torch.Tensor,
     edge_index = data.edge_index
     if eval_on_cpu:
         # move data to CPU
+        device = 'cpu'
         x = x.cpu()
         edge_index = edge_index.cpu()
         gcn_c = gcn_c.cpu()
+        gcn_gf = gcn_gf.cpu()
         all_predictions = torch.tensor([], dtype=torch.long, device='cpu')
     else:
         # move data to GPU
@@ -137,7 +139,7 @@ def evaluate(features: torch.Tensor,
 
                     # Sample top k neighbors using the logits
                     b = Bernoulli(logits=node_logits.squeeze())
-                    samples = torch.topk(b.probs, k=args.num_samples, dim=0, sorted=False)[1]
+                    samples = torch.topk(b.probs, k=min(neighbor_nodes.size(0), args.num_samples), dim=0, sorted=False)[1]
                     sample_mask = torch.zeros_like(node_logits.squeeze(), dtype=torch.float)
                     sample_mask[samples] = 1
                     sampled_neighboring_nodes = neighbor_nodes[sample_mask.bool().cpu()]
@@ -170,9 +172,9 @@ def evaluate(features: torch.Tensor,
                 sub_adj_size.append((len(previous_nodes), len(batch_nodes)))
 
                 node_map.update(previous_nodes)
-                local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]))
+                local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[0]).to(device))
                 node_map.update(batch_nodes)
-                local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[1]))
+                local_hop_edges.append(node_map.map(k_hop_edges_w_sloop[1]).to(device))
                 local_edge_indices.append(local_hop_edges)
                 # Update the previous_nodes
                 previous_nodes = batch_nodes.clone()
