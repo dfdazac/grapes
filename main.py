@@ -35,6 +35,8 @@ class Arguments(Tap):
 
     model_type: str = 'gcn'
     hidden_dim: int = 256
+    embed_nodes: bool = False
+    node_emb_dim: int = 64
     max_epochs: int = 30
     batch_size: int = 512
     eval_frequency: int = 5
@@ -58,6 +60,15 @@ def train(args: Arguments):
     path = os.path.join(os.getcwd(), 'data', args.dataset)
     data, num_features, num_classes = get_data(root=path, name=args.dataset)
 
+    embedding_params = []
+    if args.embed_nodes:
+        logger.info('Using learned node embeddings for features')
+        embeddings = torch.FloatTensor(data.num_nodes, args.node_emb_dim)
+        nn.init.normal_(embeddings)
+        embeddings = nn.Parameter(embeddings, requires_grad=True)
+        data.node_stores[0].x = embeddings
+        embedding_params.append(embeddings)
+
     node_map = TensorMap(size=data.num_nodes)
 
     if args.use_indicators:
@@ -72,7 +83,7 @@ def train(args: Arguments):
                       hidden_dims=[args.hidden_dim, 1]).to(device)
 
     log_z = torch.tensor(args.log_z_init, requires_grad=True)
-    optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
+    optimizer_c = Adam(list(gcn_c.parameters()) + embedding_params, lr=args.lr_gc)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
 
     if data.y.dim() == 1:
