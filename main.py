@@ -42,6 +42,7 @@ class Arguments(Tap):
     eval_frequency: int = 5
     eval_on_cpu: bool = True
     eval_full_batch: bool = True
+    random_sampling: bool = False
 
     runs: int = 10
     notes: str = None
@@ -170,8 +171,12 @@ def train(args: Arguments):
                     else:
                         x = data.x[batch_nodes].to(device)
 
-                    # Get probabilities for sampling each node
-                    node_logits, _ = gcn_gf(x, local_neighborhoods)
+                    if args.random_sampling:
+                        node_logits = 100 * torch.ones((x.shape[0], 1), dtype=torch.float)
+                    else:
+                        # Get probabilities for sampling each node
+                        node_logits, _ = gcn_gf(x, local_neighborhoods)
+
                     # Select logits for neighbor nodes only
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
 
