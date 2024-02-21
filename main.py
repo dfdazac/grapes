@@ -58,6 +58,24 @@ def train(args: Arguments):
     path = os.path.join(os.getcwd(), 'data', args.dataset)
     data, num_features, num_classes = get_data(root=path, name=args.dataset)
 
+    yelp_single=False
+    if yelp_single:
+        label_frequency = data.y.sum(dim=0)
+        y = torch.empty(data.num_nodes, dtype=torch.long)
+        for i in range(0, data.num_nodes):
+            labels = data.y[i].nonzero(as_tuple=False)
+            if labels.numel() == 0:
+                y[i] = torch.tensor([2])
+            else:
+                y[i] = labels[torch.abs(label_frequency[labels].squeeze() - data.num_nodes / 2).argmin()]
+
+        lbl_uni, lbl_cnt = torch.unique(y, return_counts=True)
+        lbl_map = TensorMap(size=lbl_uni.max()+1)
+        lbl_map.update(lbl_uni)
+        lbl_new = lbl_map.map(y)
+        data.y = lbl_new
+        num_classes = len(lbl_uni)
+
     node_map = TensorMap(size=data.num_nodes)
 
     if args.use_indicators:
@@ -113,8 +131,8 @@ def train(args: Arguments):
 
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(train_loader):
-                torch.cuda.empty_cache()
-                torch.cuda.reset_peak_memory_stats()
+                # torch.cuda.empty_cache()
+                # torch.cuda.reset_peak_memory_stats()
 
                 target_nodes = batch[0]
 
