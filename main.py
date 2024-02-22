@@ -88,10 +88,13 @@ def train(args: Arguments):
         # GCN model for GFlotNet sampling
         gcn_gf = GCN(data.num_features + num_indicators,
                       hidden_dims=[args.hidden_dim, 1]).to(device)
+        gcn_z = GCN(data.num_features, hidden_dims=[args.hidden_dim, 1]).to(device)
 
-    log_z = torch.tensor(args.log_z_init, requires_grad=True)
+    # z_pred = torch.nn.ModuleList([torch.nn.Linear(args.hidden_dim, 1), torch.nn.ReLU(), torch.nn.Linear(args.hidden_dim, 1)])
+
     optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
-    optimizer_gf = Adam(list(gcn_gf.parameters()) + [log_z], lr=args.lr_gf)
+    optimizer_gf = Adam(list(gcn_gf.parameters()) + list(gcn_z.parameters()), lr=args.lr_gf)
+
 
     if data.y.dim() == 1:
         loss_fn = nn.CrossEntropyLoss()
@@ -148,6 +151,8 @@ def train(args: Arguments):
                 sampled_sizes = []
                 neighborhood_sizes = []
                 all_statistics = []
+
+                log_z = None
                 # Sample neighborhoods with the GCN-GF model
                 for hop in range(args.sampling_hops):
                     # Get neighborhoods of target nodes in batch
@@ -189,6 +194,13 @@ def train(args: Arguments):
                         args.num_samples
                     )
                     all_nodes_mask[sampled_neighboring_nodes] = True
+
+                    if hop == 0:
+                        # Predict log-z, offset with init hyperparameter.
+                        # Just another GNN that predicts logits
+                        # At the end, average the logits and subtract the init hyperparameter
+                        pred_gcn_z = gcn_z(data.x[batch_nodes].to(device), local_neighborhoods)[0].squeeze()
+                        log_z = pred_gcn_z.mean() - args.log_z_init
 
                     log_probs.append(log_prob)
                     sampled_sizes.append(sampled_neighboring_nodes.shape[0])
@@ -233,6 +245,8 @@ def train(args: Arguments):
 
                 optimizer_gf.zero_grad()
                 cost_gfn = loss_c.detach()
+
+
 
                 loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
 
