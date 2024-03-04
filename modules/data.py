@@ -8,7 +8,7 @@ from ogb.nodeproppred import PygNodePropPredDataset
 from torch_geometric.data import Batch, Data
 from torch_geometric.datasets import (PPI, Amazon, Coauthor, Flickr,
                                       GNNBenchmarkDataset, Planetoid, Reddit2,
-                                      WikiCS, Yelp)
+                                      WikiCS, Yelp, WebKB, Actor)
 
 from .utils import gen_masks, index2mask
 
@@ -111,6 +111,18 @@ def get_sbm(root: str, name: str) -> Tuple[Data, int, int]:
     return data, dataset.num_features, dataset.num_classes
 
 
+def get_webkb(root: str, name: str) -> Tuple[Data, int, int]:
+    dataset = WebKB(root=root + "/dataset/WebKB", name=name)
+
+    data = dataset[0]
+    return data, dataset.num_features, dataset.num_classes
+
+def get_actor(root:str) -> Tuple[Data, int, int]:
+    dataset = Actor(root=root + "/dataset/Actor")
+    data = dataset[0]
+    return data, dataset.num_features, dataset.num_classes
+
+
 def get_data(root: str, name: str) -> Tuple[Data, int, int]:
     if name.lower() in ['cora', 'citeseer', 'pubmed']:
         return get_planetoid(root, name)
@@ -134,5 +146,9 @@ def get_data(root: str, name: str) -> Tuple[Data, int, int]:
         return get_arxiv(root)
     elif name.lower() in ['ogbn-products', 'products']:
         return get_products(root)
+    elif name.lower() in ["cornell", "texas", "wisconsin"]:
+        return get_webkb(root, name)
+    elif name.lower() == 'actor':
+        return get_actor(root)
     else:
         raise NotImplementedError
