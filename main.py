@@ -160,6 +160,7 @@ def train(args: Arguments):
                 log_probs = []
                 all_statistics = []
                 global_edge_indices = []
+                batch_homophily = []
                 # Sample neighborhoods with the GCN-GF model
                 for hop in range(args.sampling_hops):
                     local_hop_edges = []
@@ -200,6 +201,7 @@ def train(args: Arguments):
                                                 #[local_neighborhoods[0], local_neighborhoods[1]]],
                                             #[(len(batch_nodes), len(batch_nodes)),
                                              #(len(batch_nodes), len(batch_nodes))])
+                    # node_logits = torch.ones(x.size(0))
                     # Select logits for neighbor nodes only
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
                     if args.num_samples >0:
@@ -248,6 +250,8 @@ def train(args: Arguments):
                     k_hop_edges_w_sloop = torch.cat([k_hop_edges, target_nodes.repeat(2, 1)], dim=1)
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
+                    batch_homophily.append(homophily(k_hop_edges, data.y))
+
                     log_probs.append(log_prob)
                     sub_adj_size.append((len(previous_nodes), len(batch_nodes)))
                     neighborhood_sizes.append(neighborhoods.shape[-1])
@@ -270,8 +274,8 @@ def train(args: Arguments):
                 all_nodes = node_map.values[all_nodes_mask]
                 node_map.update(all_nodes)
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
-                batch_homophily_hop1 = homophily(edge_indices[0], data.y[all_nodes])
-                batch_homophily_hop2 = homophily(edge_indices[1], data.y[all_nodes])
+                # batch_homophily_hop1 = homophily(global_edge_indices[0], data.y)
+                # batch_homophily_hop2 = homophily(edge_indices[1], data.y[all_nodes])
 
                 x = features[all_nodes].to(device)
                 # x = features[batch_nodes].to(device)
@@ -316,8 +320,8 @@ def train(args: Arguments):
                 acc_loss_gfn += batch_loss_gfn / len(train_loader)
                 acc_loss_c += batch_loss_c / len(train_loader)
 
-                homophily_hop1 += batch_homophily_hop1/len(train_loader)
-                homophily_hop2 += batch_homophily_hop2 / len(train_loader)
+                homophily_hop1 += batch_homophily[0]/len(train_loader)
+                homophily_hop2 += batch_homophily[1] / len(train_loader)
 
                 bar.set_postfix({'batch_loss_gfn': batch_loss_gfn,
                                  'batch_loss_c': batch_loss_c,
