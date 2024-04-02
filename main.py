@@ -214,8 +214,8 @@ def train(args: Arguments):
 
                     # Retrieve the edge index that results after sampling
                     k_hop_edges = slice_adjacency(adjacency,
-                                                  rows=previous_nodes,
-                                                  cols=batch_nodes)
+                                                  rows=batch_nodes,
+                                                  cols=previous_nodes)
                     global_edge_indices.append(k_hop_edges)
 
                     # Update the previous_nodes
