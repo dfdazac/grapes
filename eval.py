@@ -67,7 +67,7 @@ def evaluate(gcn_c: torch.nn.Module,
                 recall = tp / (tp + fn)
                 f1 = accuracy = 2 * (precision * recall) / (precision + recall)
             except ZeroDivisionError:
-                f1 = 0.
+                f1 = accuracy = 0.
     else:
         # perform mini-batch message passing for evaluation
         assert loader is not None, 'loader must be provided if full_batch is False'
