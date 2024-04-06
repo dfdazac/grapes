@@ -35,11 +35,14 @@ class Arguments(Tap):
 
     model_type: str = 'gcn'
     hidden_dim: int = 256
+    embed_nodes: bool = False
+    node_emb_dim: int = 64
     max_epochs: int = 30
     batch_size: int = 512
     eval_frequency: int = 5
     eval_on_cpu: bool = True
     eval_full_batch: bool = True
+    random_sampling: bool = False
 
     runs: int = 10
     notes: str = None
@@ -76,6 +79,15 @@ def train(args: Arguments):
         data.y = lbl_new
         num_classes = len(lbl_uni)
 
+    embedding_params = []
+    if args.embed_nodes:
+        logger.info('Using learned node embeddings for features')
+        embeddings = torch.FloatTensor(data.num_nodes, args.node_emb_dim)
+        nn.init.normal_(embeddings)
+        embeddings = nn.Parameter(embeddings, requires_grad=True)
+        data.node_stores[0].x = embeddings
+        embedding_params.append(embeddings)
+
     node_map = TensorMap(size=data.num_nodes)
 
     if args.use_indicators:
@@ -90,9 +102,7 @@ def train(args: Arguments):
                       hidden_dims=[args.hidden_dim, 1]).to(device)
         gcn_z = GCN(data.num_features, hidden_dims=[args.hidden_dim, 1]).to(device)
 
-    # z_pred = torch.nn.ModuleList([torch.nn.Linear(args.hidden_dim, 1), torch.nn.ReLU(), torch.nn.Linear(args.hidden_dim, 1)])
-
-    optimizer_c = Adam(gcn_c.parameters(), lr=args.lr_gc)
+    optimizer_c = Adam(list(gcn_c.parameters()) + embedding_params, lr=args.lr_gc)
     optimizer_gf = Adam(list(gcn_gf.parameters()) + list(gcn_z.parameters()), lr=args.lr_gf)
 
 
@@ -182,8 +192,12 @@ def train(args: Arguments):
                     else:
                         x = data.x[batch_nodes].to(device)
 
-                    # Get probabilities for sampling each node
-                    node_logits, _ = gcn_gf(x, local_neighborhoods)
+                    if args.random_sampling:
+                        node_logits = 100 * torch.ones((x.shape[0], 1), dtype=torch.float)
+                    else:
+                        # Get probabilities for sampling each node
+                        node_logits, _ = gcn_gf(x, local_neighborhoods)
+
                     # Select logits for neighbor nodes only
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
 
@@ -245,8 +259,6 @@ def train(args: Arguments):
 
                 optimizer_gf.zero_grad()
                 cost_gfn = loss_c.detach()
-
-
 
                 loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
 

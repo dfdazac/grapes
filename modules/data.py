@@ -110,6 +110,21 @@ def get_sbm(root: str, name: str) -> Tuple[Data, int, int]:
     data.ptr = None
     return data, dataset.num_features, dataset.num_classes
 
+def get_proteins(root: str):
+    dataset = PygNodePropPredDataset('ogbn-proteins', root)
+    data = dataset[0]
+
+    split_idx = dataset.get_idx_split()
+    data.train_mask = index2mask(split_idx['train'], data.num_nodes)
+    data.val_mask = index2mask(split_idx['valid'], data.num_nodes)
+    data.test_mask = index2mask(split_idx['test'], data.num_nodes)
+
+    # This is a multi-label binary classification dataset, so we need
+    # float targets for BCEWithLogitsLoss
+    data.y = data.y.float()
+
+    return data, dataset.num_features, data.y.shape[1]
+
 
 def get_data(root: str, name: str) -> Tuple[Data, int, int]:
     if name.lower() in ['cora', 'citeseer', 'pubmed']:
@@ -134,5 +149,7 @@ def get_data(root: str, name: str) -> Tuple[Data, int, int]:
         return get_arxiv(root)
     elif name.lower() in ['ogbn-products', 'products']:
         return get_products(root)
+    elif name.lower() == 'ogbn-proteins':
+        return get_proteins(root)
     else:
         raise NotImplementedError
