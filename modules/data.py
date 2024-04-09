@@ -1,7 +1,9 @@
 # From PyGAS, PyTorch Geometric Auto-Scale: https://github.com/rusty1s/pyg_autoscale/tree/master
 from typing import Tuple
 
+import scipy.io
 import torch
+import numpy as np
 import torch_geometric.transforms as T
 import torch_geometric.utils as pygutils
 from ogb.nodeproppred import PygNodePropPredDataset
@@ -12,6 +14,35 @@ from torch_geometric.datasets import (PPI, Amazon, Coauthor, Flickr,
 
 from .utils import gen_masks, index2mask
 
+def get_blogcat(root: str, name: str) -> Tuple[Data, int, int]:
+    dataset = torch.load(f'{root}/blogcatalog_0.6/split_0.pt')
+    graph = scipy.io.loadmat(f'{root}/blogcatalog_0.6/blogcatalog.mat')
+    edges = graph['network'].nonzero()
+    edge_index = torch.tensor(np.vstack((edges[0], edges[1])), dtype=torch.long)
+    data = Data(y=torch.tensor(graph['group'].todense()), edge_index=edge_index,
+                train_mask=dataset['train_mask'], test_mask=dataset['test_mask'], val_mask=dataset['val_mask'],
+                num_classes=39)
+    data.node_stores[0].x = torch.empty(data.num_nodes, 32)
+
+    return data, data.num_features, data.num_classes
+
+
+def get_dblp(root: str, name: str) -> Tuple[Data, int, int]:
+    dataset = DBLP(f'{root}/dblp')
+    return dataset[0], dataset.num_features, dataset.num_classes
+
+
+def get_synth(root: str, name: str) -> Tuple[Data, int, int]:
+    dataset = torch.load(f'{root}/Hyperspheres_10_10_0_0.6/split_0.pt')
+    edge_index = torch.load(f'{root}/Hyperspheres_10_10_0/edge_index.pt')
+    labels = torch.tensor(np.genfromtxt(f'{root}/Hyperspheres_10_10_0/labels.csv', skip_header=1,
+                       dtype=np.dtype(float), delimiter=','))
+    features = torch.tensor(np.genfromtxt(f'{root}/Hyperspheres_10_10_0/features.csv', skip_header=1,
+                       dtype=np.dtype('float32'), delimiter=','))
+    data = Data(x=features, y=labels, edge_index=edge_index, train_mask=dataset['train_mask'],
+                test_mask=dataset['test_mask'], val_mask=dataset['val_mask'],
+                num_classes=20)
+    return data, data.num_features, data.num_classes
 
 def get_planetoid(root: str, name: str) -> Tuple[Data, int, int]:
     transform = T.Compose([T.NormalizeFeatures(), T.ToSparseTensor()])
@@ -111,8 +142,30 @@ def get_sbm(root: str, name: str) -> Tuple[Data, int, int]:
     return data, dataset.num_features, dataset.num_classes
 
 
+def get_proteins(root: str):
+    dataset = PygNodePropPredDataset('ogbn-proteins', root)
+    data = dataset[0]
+
+    split_idx = dataset.get_idx_split()
+    data.train_mask = index2mask(split_idx['train'], data.num_nodes)
+    data.val_mask = index2mask(split_idx['valid'], data.num_nodes)
+    data.test_mask = index2mask(split_idx['test'], data.num_nodes)
+
+    # This is a multi-label binary classification dataset, so we need
+    # float targets for BCEWithLogitsLoss
+    data.y = data.y.float()
+
+    return data, dataset.num_features, data.y.shape[1]
+
+
 def get_data(root: str, name: str) -> Tuple[Data, int, int]:
-    if name.lower() in ['cora', 'citeseer', 'pubmed']:
+    if name.lower() in ['blogcat']:
+        return get_blogcat(root, name)
+    elif name.lower() == 'dblp':
+        return get_dblp(root, name)
+    elif name.lower() == 'synth':
+        return get_synth(root, name)
+    elif name.lower() in ['cora', 'citeseer', 'pubmed']:
         return get_planetoid(root, name)
     elif name.lower() in ['coauthorcs', 'coauthorphysics']:
         return get_coauthor(root, name[8:])
@@ -134,5 +187,7 @@ def get_data(root: str, name: str) -> Tuple[Data, int, int]:
         return get_arxiv(root)
     elif name.lower() in ['ogbn-products', 'products']:
         return get_products(root)
+    elif name.lower() == 'ogbn-proteins':
+        return get_proteins(root)
     else:
         raise NotImplementedError
