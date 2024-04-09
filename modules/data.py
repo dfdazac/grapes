@@ -10,7 +10,7 @@ from ogb.nodeproppred import PygNodePropPredDataset
 from torch_geometric.data import Batch, Data
 from torch_geometric.datasets import (PPI, Amazon, Coauthor, Flickr,
                                       GNNBenchmarkDataset, Planetoid, Reddit2,
-                                      WikiCS, Yelp)
+                                      WikiCS, Yelp, DBLP)
 from .utils import gen_masks, index2mask
 
 
@@ -25,6 +25,25 @@ def get_blogcat(root: str, name: str) -> Tuple[Data, int, int]:
     data.node_stores[0].x = torch.empty(data.num_nodes, 32)
 
     return data, data.num_features, data.num_classes
+
+
+def get_dblp(root: str, name: str) -> Tuple[Data, int, int]:
+    dataset = DBLP(f'{root}/dblp')
+    return dataset[0], dataset.num_features, dataset.num_classes
+
+
+def get_synth(root: str, name: str) -> Tuple[Data, int, int]:
+    dataset = torch.load(f'{root}/Hyperspheres_10_10_0_0.6/split_0.pt')
+    edge_index = torch.load(f'{root}/Hyperspheres_10_10_0/edge_index.pt')
+    labels = torch.tensor(np.genfromtxt(f'{root}/Hyperspheres_10_10_0/labels.csv', skip_header=1,
+                       dtype=np.dtype(float), delimiter=','))
+    features = torch.tensor(np.genfromtxt(f'{root}/Hyperspheres_10_10_0/features.csv', skip_header=1,
+                       dtype=np.dtype('float32'), delimiter=','))
+    data = Data(x=features, y=labels, edge_index=edge_index, train_mask=dataset['train_mask'],
+                test_mask=dataset['test_mask'], val_mask=dataset['val_mask'],
+                num_classes=20)
+    return data, data.num_features, data.num_classes
+
 
 def get_planetoid(root: str, name: str) -> Tuple[Data, int, int]:
     transform = T.Compose([T.NormalizeFeatures(), T.ToSparseTensor()])
@@ -123,6 +142,7 @@ def get_sbm(root: str, name: str) -> Tuple[Data, int, int]:
     data.ptr = None
     return data, dataset.num_features, dataset.num_classes
 
+
 def get_proteins(root: str):
     dataset = PygNodePropPredDataset('ogbn-proteins', root)
     data = dataset[0]
@@ -142,7 +162,11 @@ def get_proteins(root: str):
 def get_data(root: str, name: str) -> Tuple[Data, int, int]:
     if name.lower() in ['blogcat']:
         return get_blogcat(root, name)
-    if name.lower() in ['cora', 'citeseer', 'pubmed']:
+    elif name.lower() == 'dblp':
+        return get_dblp(root, name)
+    elif name.lower() == 'synth':
+        return get_synth(root, name)
+    elif name.lower() in ['cora', 'citeseer', 'pubmed']:
         return get_planetoid(root, name)
     elif name.lower() in ['coauthorcs', 'coauthorphysics']:
         return get_coauthor(root, name[8:])
