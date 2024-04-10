@@ -30,8 +30,8 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     n = neighbor_nodes.shape[0]
     if k >= n:
         # TODO: Test this setting
-        return neighbor_nodes, torch.sigmoid(
-            logits.squeeze(-1)).log(), {}
+        b = Bernoulli(logits=logits.squeeze())
+        return neighbor_nodes, b.probs.log(), {}
     assert k < n
     assert k > 0
 
@@ -64,6 +64,10 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
                   "max_prob": max_prob,
                   "mean_entropy": mean_entropy,
                   "std_entropy": std_entropy}
+
+    if torch.isinf(b.log_prob(mask)).any():
+        inf_ind = torch.isinf(b.log_prob(mask))
+        b.log_prob(mask)[inf_ind] = -1e-9
 
     return neighbor_nodes, b.log_prob(mask), stats_dict
 
