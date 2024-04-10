@@ -45,6 +45,19 @@ def get_synth(root: str, name: str) -> Tuple[Data, int, int]:
     return data, data.num_features, data.num_classes
 
 
+def get_synth_high(root: str, name: str) -> Tuple[Data, int, int]:
+    dataset = torch.load(f'{root}/Hyperspheres_10_10_0_0.6/split_0.pt')
+    edge_index = torch.load(f'{root}/Hyperspheres_10_10_0/edge_index_high.pt')
+    labels = torch.tensor(np.genfromtxt(f'{root}/Hyperspheres_10_10_0/labels.csv', skip_header=1,
+                       dtype=np.dtype(float), delimiter=','))
+    features = torch.tensor(np.genfromtxt(f'{root}/Hyperspheres_10_10_0/features.csv', skip_header=1,
+                       dtype=np.dtype('float32'), delimiter=','))
+    data = Data(x=features, y=labels, edge_index=edge_index, train_mask=dataset['train_mask'],
+                test_mask=dataset['test_mask'], val_mask=dataset['val_mask'],
+                num_classes=20)
+    return data, data.num_features, data.num_classes
+
+
 def get_planetoid(root: str, name: str) -> Tuple[Data, int, int]:
     transform = T.Compose([T.NormalizeFeatures(), T.ToSparseTensor()])
     dataset = Planetoid(f'{root}/Planetoid', name, split='full') #, transform=transform)
@@ -166,6 +179,8 @@ def get_data(root: str, name: str) -> Tuple[Data, int, int]:
         return get_dblp(root, name)
     elif name.lower() == 'synth':
         return get_synth(root, name)
+    elif name.lower() == 'synth_high':
+        return get_synth_high(root, name)
     elif name.lower() in ['cora', 'citeseer', 'pubmed']:
         return get_planetoid(root, name)
     elif name.lower() in ['coauthorcs', 'coauthorphysics']:
