@@ -29,13 +29,8 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     k = num_samples
     n = neighbor_nodes.shape[0]
     if k >= n:
-        # TODO: Test this setting
-        # import pdb; pdb.set_trace()
-        b = Bernoulli(logits=logits.squeeze())
-        if torch.isinf(b.probs.log()).any():
-            inf_ind = torch.isinf(b.probs.log())
-            b.probs[inf_ind] += 1e-9
-        return neighbor_nodes, b.probs.log(), {}
+        logprobs = torch.nn.functional.logsigmoid(logits)
+        return neighbor_nodes, logprobs, {}
     assert k < n
     assert k > 0
 
