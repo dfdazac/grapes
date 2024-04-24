@@ -19,9 +19,16 @@ def get_blogcat(root: str, name: str) -> Tuple[Data, int, int]:
     graph = scipy.io.loadmat(f'{root}/blogcatalog_0.6/blogcatalog.mat')
     edges = graph['network'].nonzero()
     edge_index = torch.tensor(np.vstack((edges[0], edges[1])), dtype=torch.long)
+    train_mask = torch.zeros(10312, dtype=torch.bool)
+    test_mask = torch.zeros(10312, dtype=torch.bool)
+    val_mask = torch.zeros(10312, dtype=torch.bool)
+    train_mask[dataset['train_mask']] = True
+    test_mask[dataset['test_mask']] = True
+    val_mask[dataset['val_mask']] = True
+
     data = Data(y=torch.tensor(graph['group'].todense()), edge_index=edge_index,
-                train_mask=dataset['train_mask'], test_mask=dataset['test_mask'], val_mask=dataset['val_mask'],
-                num_classes=39)
+                train_mask=train_mask, test_mask=test_mask, val_mask=val_mask,
+                num_classes=39, num_nodes=10312)
     data.node_stores[0].x = torch.empty(data.num_nodes, 32)
 
     return data, data.num_features, data.num_classes
