@@ -18,7 +18,6 @@ from .homophily import our_measure, edge_homophily_edge_idx
 
 from torch_geometric.datasets import Planetoid
 from torch_geometric.transforms import NormalizeFeatures
-from torch_sparse import SparseTensor
 from ogb.nodeproppred import NodePropPredDataset
 
 
