@@ -51,7 +51,8 @@ class NCDataset(object):
         self.graph = {}
         self.label = None
 
-    def get_idx_split(self, split_type='random', train_prop=.5, valid_prop=.25):
+    def get_idx_split(self, split_type='random', train_prop=.5, valid_prop=.25,
+                      seed=None):
         """
         train_prop: The proportion of dataset for train split. Between 0 and 1.
         valid_prop: The proportion of dataset for validation split. Between 0 and 1.
@@ -60,7 +61,8 @@ class NCDataset(object):
         if split_type == 'random':
             ignore_negative = False if self.name == 'ogbn-proteins' else True
             train_idx, valid_idx, test_idx = rand_train_test_idx(
-                self.label, train_prop=train_prop, valid_prop=valid_prop, ignore_negative=ignore_negative)
+                self.label, train_prop=train_prop, valid_prop=valid_prop, ignore_negative=ignore_negative,
+            seed=seed)
             split_idx = {'train': train_idx,
                          'valid': valid_idx,
                          'test': test_idx}

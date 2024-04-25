@@ -173,10 +173,10 @@ def get_proteins(root: str):
     return data, dataset.num_features, data.y.shape[1]
 
 
-def get_linkx_dataset(root: str, name: str):
+def get_linkx_dataset(root: str, name: str, seed: int = None):
     if name.lower() == 'snap-patents':
         dataset = load_snap_patents_mat(root)
-        split_idx = dataset.get_idx_split()
+        split_idx = dataset.get_idx_split(seed=seed)
         num_nodes = dataset.graph['num_nodes']
         train_mask = index2mask(split_idx['train'], num_nodes)
         valid_mask = index2mask(split_idx['valid'], num_nodes)
@@ -197,7 +197,7 @@ def get_linkx_dataset(root: str, name: str):
 
     return data, data.num_features, num_classes
 
-def get_data(root: str, name: str) -> Tuple[Data, int, int]:
+def get_data(root: str, name: str, seed: int = None) -> Tuple[Data, int, int]:
     if name.lower() in ['blogcat']:
         return get_blogcat(root, name)
     elif name.lower() == 'dblp':
@@ -231,6 +231,6 @@ def get_data(root: str, name: str) -> Tuple[Data, int, int]:
     elif name.lower() == 'ogbn-proteins':
         return get_proteins(root)
     elif name.lower() == 'snap-patents':
-        return get_linkx_dataset(root, 'snap-patents')
+        return get_linkx_dataset(root, 'snap-patents', seed)
     else:
         raise NotImplementedError

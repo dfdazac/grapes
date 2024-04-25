@@ -9,7 +9,8 @@ from torch_sparse import SparseTensor
 import gdown
 
 
-def rand_train_test_idx(label, train_prop=.5, valid_prop=.25, ignore_negative=True):
+def rand_train_test_idx(label, train_prop=.5, valid_prop=.25, ignore_negative=True,
+                        seed=None):
     """ randomly splits label into train/valid/test splits """
     if ignore_negative:
         labeled_nodes = torch.where(label != -1)[0]
@@ -20,7 +21,8 @@ def rand_train_test_idx(label, train_prop=.5, valid_prop=.25, ignore_negative=Tr
     train_num = int(n * train_prop)
     valid_num = int(n * valid_prop)
 
-    perm = torch.as_tensor(np.random.permutation(n))
+    rng = np.random.default_rng(seed)
+    perm = torch.as_tensor(rng.permutation(n))
 
     train_indices = perm[:train_num]
     val_indices = perm[train_num:train_num + valid_num]
