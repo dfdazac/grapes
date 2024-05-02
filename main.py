@@ -165,7 +165,7 @@ def train(args: Arguments):
                 neighborhood_sizes = []
                 all_statistics = []
 
-                log_z = None
+                log_z = torch.tensor([0.0])
                 # Sample neighborhoods with the GCN-GF model
                 for hop in range(args.sampling_hops):
                     # Get neighborhoods of target nodes in batch
@@ -212,7 +212,7 @@ def train(args: Arguments):
                     )
                     all_nodes_mask[sampled_neighboring_nodes] = True
 
-                    if hop == 0:
+                    if hop == 0 and not args.random_sampling:
                         # Predict log-z, offset with init hyperparameter.
                         # Just another GNN that predicts logits
                         # At the end, average the logits and subtract the init hyperparameter
@@ -257,23 +257,24 @@ def train(args: Arguments):
                 mem_allocations_point3.append(torch.cuda.memory_allocated() / (1024 * 1024))
 
                 loss_c.backward()
-
                 optimizer_c.step()
-
-                optimizer_gf.zero_grad()
-                cost_gfn = loss_c.detach()
-
-                loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
-
-                mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
-                mem_allocations_point2.append(gcn_mem_alloc)
-
-                loss_gfn.backward()
-
-                optimizer_gf.step()
-
-                batch_loss_gfn = loss_gfn.item()
                 batch_loss_c = loss_c.item()
+
+                batch_loss_gfn = 0
+                if not args.random_sampling:
+                    optimizer_gf.zero_grad()
+                    cost_gfn = loss_c.detach()
+
+                    loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
+
+                    mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
+                    mem_allocations_point2.append(gcn_mem_alloc)
+
+                    loss_gfn.backward()
+
+                    optimizer_gf.step()
+
+                    batch_loss_gfn = loss_gfn.item()
 
                 wandb.log({'batch_loss_gfn': batch_loss_gfn,
                            'batch_loss_c': batch_loss_c,
