@@ -8,7 +8,7 @@
 --hidden_dim 256
 --log_wandb true
 --log_z_init 0
---loss_coef 10,000
+--loss_coef 10000
 --lr_gc 0.0000011576689880903
 --lr_gf 0.0001
 --max_epochs 100
