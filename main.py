@@ -267,14 +267,13 @@ def train(args: Arguments):
                     optimizer_gf.zero_grad()
                     cost_gfn = loss_c.detach()
 
-                    loss_gfn = (log_z + torch.sum(torch.cat(log_probs, dim=0)) + args.loss_coef*cost_gfn)**2
-                tot_log_prob = torch.sum(torch.cat(log_probs, dim=0))
-                if args.reinforce_baseline:
-                    # Simple REINFORCE loss. No baseline. So simply minimize the score times the reward
-                    loss_gfn = -tot_log_prob * cost_gfn
-                else:
-                    # Trajectory Balance loss
-                    loss_gfn = (log_z + tot_log_prob + args.loss_coef*cost_gfn)**2
+                    tot_log_prob = torch.sum(torch.cat(log_probs, dim=0))
+                    if args.reinforce_baseline:
+                        # Simple REINFORCE loss. No baseline. So simply minimize the score times the reward
+                        loss_gfn = -tot_log_prob * cost_gfn
+                    else:
+                        # Trajectory Balance loss
+                        loss_gfn = (log_z + tot_log_prob + args.loss_coef*cost_gfn)**2
 
                     mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
                     mem_allocations_point2.append(gcn_mem_alloc)
