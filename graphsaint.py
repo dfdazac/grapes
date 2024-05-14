@@ -5,7 +5,7 @@ import pdb
 import torch
 import torch.nn as nn
 
-from torch_geometric.loader import GraphSAINTNodeSampler
+from torch_geometric.loader import GraphSAINTNodeSampler, GraphSAINTRandomWalkSampler
 from modules.gcn import GCN
 from modules.data import get_data
 
@@ -16,11 +16,13 @@ parser.add_argument('--dataset', type=str)
 parser.add_argument('--runs', default=1, type=int)
 parser.add_argument('--lr', default=0.01, type=float)
 parser.add_argument('--max_epoch', default=50, type=int)
+parser.add_argument('--embed_nodes', default=False, type=bool)
+parser.add_argument('--node_emb_dim', default=64, type=int)
 args = parser.parse_args()
 
 
 def train(model, loader, loss_fn):
-    model = model.cuda()
+    # model = model.cuda()
     model.train()
     total_loss = total_examples = 0
     for batch in loader:
@@ -34,6 +36,7 @@ def train(model, loader, loss_fn):
 
         loss.backward()
         optimizer.step()
+        print(data.x.grad.mean())
         total_loss += loss.item() * data.num_nodes
         total_examples += data.num_nodes
     return total_loss / total_examples
@@ -89,7 +92,16 @@ for run in range(args.runs):
     data, num_features, num_classes = get_data(root=path, name=args.dataset)
     row, col = data.edge_index
 
-    loader = GraphSAINTNodeSampler(data, batch_size=768)
+    embedding_params = []
+    if args.embed_nodes:
+        print(f'Using learned node embeddings for features')
+        embeddings = torch.FloatTensor(data.num_nodes, args.node_emb_dim)
+        nn.init.normal_(embeddings)
+        embeddings = nn.Parameter(embeddings, requires_grad=True)
+        data.node_stores[0].x = embeddings
+        embedding_params.append(embeddings)
+
+    loader = GraphSAINTRandomWalkSampler(data, batch_size=256, walk_length=2)
 
     if data.y.dim() == 1:
         loss_fn = nn.CrossEntropyLoss()
@@ -98,10 +110,11 @@ for run in range(args.runs):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = GCN(data.num_features, hidden_dims=[args.hidden_dim, num_classes]).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(list(model.parameters()) + embedding_params, lr=args.lr)
 
     for epoch in range(1, args.max_epoch+1):
         loss = train(model, loader, loss_fn)
+
         val_acc, test_acc = test(model, data)
         print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Val: {val_acc:.4f}, Test: {test_acc:.4f}')
 
