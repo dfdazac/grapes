@@ -4,6 +4,7 @@ from typing import Tuple
 import scipy.io
 import torch
 import numpy as np
+from torch.utils.data import random_split
 import torch_geometric.transforms as T
 import torch_geometric.utils as pygutils
 from ogb.nodeproppred import PygNodePropPredDataset
@@ -31,13 +32,57 @@ def get_blogcat(root: str, name: str) -> Tuple[Data, int, int]:
                 train_mask=train_mask, test_mask=test_mask, val_mask=val_mask,
                 num_classes=39, num_nodes=10312)
     data.node_stores[0].x = torch.empty(data.num_nodes, 32)
-
     return data, data.num_features, data.num_classes
 
 
-def get_dblp(root: str, name: str) -> Tuple[Data, int, int]:
-    dataset = DBLP(f'{root}/dblp')
-    return dataset[0], dataset.num_features, dataset.num_classes
+def get_dblp(root: str, name: str, seed: int = None) -> Tuple[Data, int, int]:
+    features = []
+    with open(f'{root}/features.txt', 'r') as file:
+        content = file.read()
+        values = content.strip().split('\n')
+        for value in values:
+            feature = value.split(',')
+            number = [float(i) for i in feature]
+            features.append(number)
+    edges = []
+    with open(f'{root}/dblp.edgelist', 'r') as file:
+        lines = file.readlines()
+        for line in lines:
+            parts = line.strip().split()
+            source_node = int(parts[0])
+            target_node = int(parts[1])
+            edges.append((source_node, target_node))
+            edges.append((source_node, target_node))
+
+    edge_index = torch.tensor(list(zip(*edges)), dtype=torch.long)
+    labels = []
+    with open(f'{root}/labels.txt', 'r') as file:
+        content = file.read()
+        values = content.strip().split('\n')
+        for value in values:
+            label = value.split(',')
+            number = [1. if float(x)==1 else 0. for x in label]
+            labels.append(number)
+    torch.manual_seed(seed)
+    num_nodes = 28702
+    train_ratio = 0.8
+    test_ratio = 0.1
+    num_train = int(train_ratio * num_nodes)
+    num_test = int(test_ratio * num_nodes)
+    num_val = num_nodes - num_train - num_test
+
+    train_idx, test_idx, val_idx = random_split(list(range(num_nodes)), [num_train, num_test, num_val])
+    train_mask = torch.zeros(28702, dtype=torch.bool)
+    test_mask = torch.zeros(28702, dtype=torch.bool)
+    val_mask = torch.zeros(28702, dtype=torch.bool)
+    train_mask[train_idx.indices] = True
+    test_mask[test_idx.indices] = True
+    val_mask[val_idx.indices] = True
+
+    data = Data(edge_index=edge_index, x=torch.tensor(features),y=torch.tensor(labels), train_mask=train_mask,
+                test_mask=test_mask, val_mask=val_mask, num_features=300)
+    data.node_stores[0].num_classes = 4
+    return data, data.num_features, data.num_classes
 
 
 def get_synth(root: str, name: str) -> Tuple[Data, int, int]:
@@ -208,7 +253,7 @@ def get_data(root: str, name: str, seed: int = None) -> Tuple[Data, int, int]:
     if name.lower() in ['blogcat']:
         return get_blogcat(root, name)
     elif name.lower() == 'dblp':
-        return get_dblp(root, name)
+        return get_dblp(root, name, seed)
     elif name.lower() == 'synth':
         return get_synth(root, name)
     elif name.lower() == 'synth_high':
