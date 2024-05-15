@@ -1,0 +1,17 @@
+--batch_size=256
+--dataset=blogcat
+--dropout=0
+--embed_nodes=True
+--eval_frequency=10
+--eval_full_batch=True
+--eval_on_cpu=True
+--hidden_dim=256
+--loss_coef=6414.70642460407
+--lr_gc=0.0028881609333779408
+--lr_gf=0.00015793805566708893
+--max_epochs=100
+--node_emb_dim=64
+--num_samples=256
+--runs=10
+--sampling_hops=2
+--use_indicators=True

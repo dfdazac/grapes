@@ -1,0 +1,17 @@
+--batch_size=256
+--dataset=ogbn-proteins
+--dropout=0
+--embed_nodes=True
+--eval_frequency=10
+--eval_full_batch=True
+--eval_on_cpu=True
+--hidden_dim=256
+--loss_coef=6346.9508656540875
+--lr_gc=4.929620450460827e-05
+--lr_gf=4.015363051110161e-05
+--max_epochs=150
+--node_emb_dim=128
+--num_samples=256
+--runs=10
+--sampling_hops=2
+--use_indicators=True
