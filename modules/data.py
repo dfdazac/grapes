@@ -16,8 +16,8 @@ from .utils import gen_masks, index2mask
 from .linkx.dataset import load_snap_patents_mat
 
 
-def get_blogcat(root: str, name: str) -> Tuple[Data, int, int]:
-    dataset = torch.load(f'{root}/blogcatalog_0.6/split_0.pt')
+def get_blogcat(root: str, name: str, split_id: int=0) -> Tuple[Data, int, int]:
+    dataset = torch.load(f'{root}/blogcatalog_0.6/split_{split_id}.pt')
     graph = scipy.io.loadmat(f'{root}/blogcatalog_0.6/blogcatalog.mat')
     edges = graph['network'].nonzero()
     edge_index = torch.tensor(np.vstack((edges[0], edges[1])), dtype=torch.long)
@@ -249,9 +249,13 @@ def get_linkx_dataset(root: str, name: str, seed: int = None):
 
     return data, data.num_features, num_classes
 
-def get_data(root: str, name: str, seed: int = None) -> Tuple[Data, int, int]:
+def get_data(root: str,
+             name: str,
+             seed: int = None,
+             split_id: int = 0,
+             ) -> Tuple[Data, int, int]:
     if name.lower() in ['blogcat']:
-        return get_blogcat(root, name)
+        return get_blogcat(root, name, split_id)
     elif name.lower() == 'dblp':
         return get_dblp(root, name, seed)
     elif name.lower() == 'synth':

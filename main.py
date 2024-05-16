@@ -45,6 +45,7 @@ class Arguments(Tap):
     random_sampling: bool = False
 
     runs: int = 10
+    split_id: int = 0
     seed: int = None
     notes: str = None
     log_wandb: bool = True
@@ -64,7 +65,8 @@ def train(args: Arguments):
     path = os.path.join(os.getcwd(), 'data', args.dataset)
     data, num_features, num_classes = get_data(root=path,
                                                name=args.dataset,
-                                               seed=args.seed)
+                                               seed=args.seed,
+                                               split_id=args.split_id)
 
     yelp_single=False
     if yelp_single:
