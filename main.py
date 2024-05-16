@@ -87,7 +87,11 @@ def train(args: Arguments):
         num_classes = len(lbl_uni)
 
     embedding_params = []
-    if args.embed_nodes:
+    if args.embed_nodes or data.x is None:
+        if not args.embed_nodes:
+            raise ValueError(f'Dataset does not contain node features,'
+                             f' and embed_nodes is False.'
+                             f' Did you mean to run with --embed_nodes=True?')
         logger.info('Using learned node embeddings for features')
         embeddings = torch.FloatTensor(data.num_nodes, args.node_emb_dim)
         nn.init.normal_(embeddings)

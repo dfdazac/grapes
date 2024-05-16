@@ -31,7 +31,7 @@ def get_blogcat(root: str, name: str, split_id: int=0) -> Tuple[Data, int, int]:
     data = Data(y=torch.tensor(graph['group'].todense()), edge_index=edge_index,
                 train_mask=train_mask, test_mask=test_mask, val_mask=val_mask,
                 num_classes=39, num_nodes=10312)
-    data.node_stores[0].x = torch.empty(data.num_nodes, 32)
+
     return data, data.num_features, data.num_classes
 
 
