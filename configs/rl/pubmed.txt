@@ -1,0 +1,16 @@
+--batch_size=256
+--dataset=pubmed
+--dropout=0
+--eval_frequency=10
+--eval_full_batch=True
+--eval_on_cpu=True
+--hidden_dim=256
+--lr_gc=0.0013628368419342706
+--lr_gf=1.7946508362298798e-06
+--max_epochs=100
+--num_samples=256
+--random_sampling=False
+--reinforce_baseline=True
+--runs=10
+--sampling_hops=2
+--use_indicators=True
