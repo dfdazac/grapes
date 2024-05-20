@@ -1,0 +1,16 @@
+--batch_size=256 
+--dataset=yelp 
+--dropout=0 
+--eval_frequency=10
+--eval_full_batch=True 
+--eval_on_cpu=True 
+--hidden_dim=256 
+--loss_coef=93660.4248213627 
+--lr_gc=4.289232190281834e-05
+--max_epochs=100 
+--num_samples=256 
+--random_sampling=False 
+--reinforce_baseline=True 
+--runs=10
+--sampling_hops=2 
+--use_indicators=True
