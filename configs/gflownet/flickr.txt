@@ -1,19 +1,17 @@
---batch_size 256
---dataset "flickr"
---eval_frequency 10
---eval_full_batch true
---eval_on_cpu true
---hidden_dim 256
---log_wandb true
---log_z_init 0.0
+--batch_size=256
+--dataset=flickr
+--dropout=0
+--eval_frequency=10
+--eval_full_batch=True
+--eval_on_cpu=True
+--hidden_dim=256
 --loss_coef=151.61393597869164
 --lr_gc=3.855492162367456e-06
 --lr_gf=8.940375384996575e-05
---max_epochs 100
---model_type "gcn"
---num_samples 256
---reg_param 0.0
---sampling_hops 2
---use_indicators true
---dropout 0.0
---runs 10
+--max_epochs=100
+--num_samples=256
+--random_sampling=False
+--reinforce_baseline=False
+--runs=10
+--sampling_hops=2
+--use_indicators=True

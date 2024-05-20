@@ -1,19 +1,17 @@
---batch_size 256
---dataset "arxiv"
---eval_frequency 10
---eval_full_batch true
---eval_on_cpu true
---hidden_dim 256
---log_wandb true
---log_z_init 0.0
---loss_coef 8456.984988036054
---lr_gc 0.00042818469939050175
---lr_gf 0.007026202172389002
---max_epochs 150
---model_type "gcn"
---num_samples 256
---reg_param 0.0
---sampling_hops 2
---use_indicators true
---dropout 0.0
---runs 10
+--batch_size=256
+--dataset=ogbn-arxiv
+--dropout=0
+--eval_frequency=10
+--eval_full_batch=True
+--eval_on_cpu=True
+--hidden_dim=256
+--loss_coef=789615.3776717983
+--lr_gc=0.00015787341565806965
+--lr_gf=1.4369839193098112e-05
+--max_epochs=150
+--num_samples=256
+--random_sampling=False
+--reinforce_baseline=False
+--runs=10
+--sampling_hops=2
+--use_indicators=True
