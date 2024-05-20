@@ -1,0 +1,16 @@
+--batch_size=256 
+--dataset=flickr 
+--dropout=0 
+--eval_frequency=10 
+--eval_full_batch=True 
+--eval_on_cpu=True 
+--hidden_dim=256 
+--loss_coef=232.30986408867068 
+--lr_gc=7.943735543958683e-06 
+--lr_gf=0.00021832387950656656 
+--max_epochs=100 
+--num_samples=256 
+--random_sampling=True 
+--runs=1 
+--sampling_hops=2 
+--use_indicators=True
