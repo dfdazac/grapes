@@ -13,7 +13,7 @@ from torch.distributions import Bernoulli, Gumbel
 def sample_neighborhoods_from_probs(logits: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
                                     num_samples: int = -1
-    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor], torch.Tensor]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
 
@@ -30,7 +30,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     n = neighbor_nodes.shape[0]
     if k >= n:
         logprobs = torch.nn.functional.logsigmoid(logits.squeeze(-1))
-        return neighbor_nodes, logprobs, {}
+        return neighbor_nodes, logprobs, {}, torch.ones_like(neighbor_nodes)
     assert k < n
     assert k > 0
 
@@ -58,6 +58,12 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     mask[samples] = 1
 
     neighbor_nodes = neighbor_nodes[mask.bool().cpu()]
+    # Straight-through gumbel-max weight extraction to be able to backprop
+    normalized = True
+    if normalized:
+        weights = perturbed_log_probs[mask.bool().cpu()]/perturbed_log_probs[mask.bool().cpu()].sum()
+    else:
+        weights = perturbed_log_probs[mask.bool().cpu()]
 
     stats_dict = {"min_prob": min_prob,
                   "max_prob": max_prob,
@@ -68,7 +74,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
         inf_ind = torch.isinf(b.log_prob(mask))
         b.log_prob(mask)[inf_ind] = -1e-9
 
-    return neighbor_nodes, b.log_prob(mask), stats_dict
+    return neighbor_nodes, b.log_prob(mask), stats_dict, weights
 
 
 def get_neighborhoods(nodes: Tensor,

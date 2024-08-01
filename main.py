@@ -68,24 +68,6 @@ def train(args: Arguments):
                                                seed=args.seed,
                                                split_id=args.split_id)
 
-    yelp_single=False
-    if yelp_single:
-        label_frequency = data.y.sum(dim=0)
-        y = torch.empty(data.num_nodes, dtype=torch.long)
-        for i in range(0, data.num_nodes):
-            labels = data.y[i].nonzero(as_tuple=False)
-            if labels.numel() == 0:
-                y[i] = torch.tensor([2])
-            else:
-                y[i] = labels[torch.abs(label_frequency[labels].squeeze() - data.num_nodes / 2).argmin()]
-
-        lbl_uni, lbl_cnt = torch.unique(y, return_counts=True)
-        lbl_map = TensorMap(size=lbl_uni.max()+1)
-        lbl_map.update(lbl_uni)
-        lbl_new = lbl_map.map(y)
-        data.y = lbl_new
-        num_classes = len(lbl_uni)
-
     embedding_params = []
     if args.embed_nodes or data.x is None:
         if not args.embed_nodes:
@@ -163,6 +145,7 @@ def train(args: Arguments):
                 previous_nodes = target_nodes.clone()
                 all_nodes_mask = torch.zeros_like(prev_nodes_mask)
                 all_nodes_mask[target_nodes] = True
+                all_weights = torch.ones(data.num_nodes)
 
                 indicator_features.zero_()
                 indicator_features[target_nodes, -1] = 1.0
@@ -213,12 +196,13 @@ def train(args: Arguments):
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
 
                     # Sample neighbors using the logits
-                    sampled_neighboring_nodes, log_prob, statistics = sample_neighborhoods_from_probs(
+                    sampled_neighboring_nodes, log_prob, statistics, g_weights = sample_neighborhoods_from_probs(
                         node_logits,
                         neighbor_nodes,
                         args.num_samples
                     )
                     all_nodes_mask[sampled_neighboring_nodes] = True
+                    all_weights[sampled_neighboring_nodes] = g_weights
 
                     if hop == 0 and not args.random_sampling:
                         # Predict log-z, offset with init hyperparameter.
@@ -254,6 +238,8 @@ def train(args: Arguments):
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
                 x = data.x[all_nodes].to(device)
+                x = torch.einsum('mf,m->mf', x, all_weights[all_nodes])
+
                 logits, gcn_mem_alloc = gcn_c(x, edge_indices)
 
                 local_target_ids = node_map.map(target_nodes)
@@ -269,26 +255,26 @@ def train(args: Arguments):
                 batch_loss_c = loss_c.item()
 
                 batch_loss_gfn = 0
-                if not args.random_sampling:
-                    optimizer_gf.zero_grad()
-                    cost_gfn = loss_c.detach()
-
-                    tot_log_prob = torch.sum(torch.cat(log_probs, dim=0))
-                    if args.reinforce_baseline:
-                        # Simple REINFORCE loss. No baseline. So simply minimize the score times the reward
-                        loss_gfn = -tot_log_prob * cost_gfn
-                    else:
-                        # Trajectory Balance loss
-                        loss_gfn = (log_z + tot_log_prob + args.loss_coef*cost_gfn)**2
-
-                    mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
-                    mem_allocations_point2.append(gcn_mem_alloc)
-
-                    loss_gfn.backward()
-
-                    optimizer_gf.step()
-
-                    batch_loss_gfn = loss_gfn.item()
+                # if not args.random_sampling:
+                #     optimizer_gf.zero_grad()
+                #     cost_gfn = loss_c.detach()
+                #
+                #     tot_log_prob = torch.sum(torch.cat(log_probs, dim=0))
+                #     if args.reinforce_baseline:
+                #         # Simple REINFORCE loss. No baseline. So simply minimize the score times the reward
+                #         loss_gfn = -tot_log_prob * cost_gfn
+                #     else:
+                #         # Trajectory Balance loss
+                #         loss_gfn = (log_z + tot_log_prob + args.loss_coef*cost_gfn)**2
+                #
+                #     mem_allocations_point1.append(torch.cuda.max_memory_allocated() / (1024 * 1024))
+                #     mem_allocations_point2.append(gcn_mem_alloc)
+                #
+                #     loss_gfn.backward()
+                #
+                #     optimizer_gf.step()
+                #
+                #     batch_loss_gfn = loss_gfn.item()
 
                 wandb.log({'batch_loss_gfn': batch_loss_gfn,
                            'batch_loss_c': batch_loss_c,
