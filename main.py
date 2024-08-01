@@ -237,8 +237,9 @@ def train(args: Arguments):
                 node_map.update(all_nodes)
                 edge_indices = [node_map.map(e).to(device) for e in global_edge_indices]
 
-                x = data.x[all_nodes].to(device)
-                x = torch.einsum('mf,m->mf', x, all_weights[all_nodes])
+                x = data.x[all_nodes]
+                # straigh-through weights for backprop
+                x = torch.einsum('mf,m->mf', x, all_weights[all_nodes]).to(device)
 
                 logits, gcn_mem_alloc = gcn_c(x, edge_indices)
 

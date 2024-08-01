@@ -61,9 +61,9 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     # Straight-through gumbel-max weight extraction to be able to backprop
     normalized = True
     if normalized:
-        weights = perturbed_log_probs[mask.bool().cpu()]/perturbed_log_probs[mask.bool().cpu()].sum()
+        weights = (perturbed_log_probs[mask.bool().cpu()]/perturbed_log_probs[mask.bool().cpu()].sum()).cpu()
     else:
-        weights = perturbed_log_probs[mask.bool().cpu()]
+        weights = perturbed_log_probs[mask.bool().cpu()].cpu()
 
     stats_dict = {"min_prob": min_prob,
                   "max_prob": max_prob,
