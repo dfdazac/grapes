@@ -48,7 +48,7 @@ class Arguments(Tap):
     split_id: int = 0
     seed: int = None
     notes: str = None
-    log_wandb: bool = True
+    log_wandb: bool = False
     config_file: str = None
 
     reinforce_baseline: bool = False
