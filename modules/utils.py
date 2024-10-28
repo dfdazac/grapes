@@ -30,7 +30,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     n = neighbor_nodes.shape[0]
     if k >= n:
         logprobs = torch.nn.functional.logsigmoid(logits.squeeze(-1))
-        return neighbor_nodes, logprobs, {}, torch.ones_like(neighbor_nodes)
+        return neighbor_nodes, logprobs, {}, torch.ones(n, dtype=torch.float)
     assert k < n
     assert k > 0
 
