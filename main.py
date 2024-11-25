@@ -144,6 +144,11 @@ def train(args: Arguments):
     all_mem_allocations_point2 = []
     all_mem_allocations_point3 = []
 
+    example_probs = []
+    previous_sampled_sets = [set() for _ in range(len(train_loader))]
+    epoch_set_similarities = []
+    annealing_values = []
+
     logger.info('Training')
     for epoch in range(1, args.max_epochs + 1):
         acc_loss_gfn = 0
@@ -152,6 +157,8 @@ def train(args: Arguments):
         mem_allocations_point1 = []  # The first point of memory usage measurement after the GCNConv forward pass
         mem_allocations_point2 = []  # The second point of memory usage measurement after the GCNConv backward pass
         mem_allocations_point3 = []  # The third point of memory usage measurement after the GCNConv backward pass
+
+        batch_set_similarities = []
 
         with tqdm(total=len(train_loader), desc=f'Epoch {epoch}') as bar:
             for batch_id, batch in enumerate(train_loader):
@@ -178,6 +185,7 @@ def train(args: Arguments):
                 for hop in range(args.sampling_hops):
                     # Get neighborhoods of target nodes in batch
                     neighborhoods = get_neighborhoods(previous_nodes, adjacency)
+
 
                     # Identify batch nodes (nodes + neighbors) and neighbors
                     prev_nodes_mask.zero_()
@@ -213,12 +221,27 @@ def train(args: Arguments):
                     node_logits = node_logits[node_map.map(neighbor_nodes)]
 
                     # Sample neighbors using the logits
-                    sampled_neighboring_nodes, log_prob, statistics = sample_neighborhoods_from_probs(
+                    sampled_neighboring_nodes, log_prob, statistics, noise_multiplier = sample_neighborhoods_from_probs(
                         node_logits,
                         neighbor_nodes,
+                        epoch,
+                        args.max_epochs,
                         args.num_samples
                     )
                     all_nodes_mask[sampled_neighboring_nodes] = True
+
+                    if hop == 0:
+                        new_sampled_set = set(sampled_neighboring_nodes.tolist())
+                        prev_set = previous_sampled_sets[batch_id]
+                        intersection = new_sampled_set.intersection(prev_set)
+                        union = new_sampled_set.union(prev_set)
+                        batch_set_similarities.append(len(intersection) / len(union))
+
+                        previous_sampled_sets[batch_id] = new_sampled_set
+
+                        if batch_id == 0:
+                            step_example_probs = node_logits.squeeze().detach().cpu()
+                            example_probs.append(step_example_probs.tolist())
 
                     if hop == 0 and not args.random_sampling:
                         # Predict log-z, offset with init hyperparameter.
@@ -310,7 +333,10 @@ def train(args: Arguments):
                                  'log_probs': torch.sum(torch.cat(log_probs, dim=0)).item()})
                 bar.update()
 
+            epoch_set_similarities.append(batch_set_similarities)
+
         bar.close()
+        annealing_values.append(noise_multiplier)
 
         all_mem_allocations_point1.extend(mem_allocations_point1)
         all_mem_allocations_point2.extend(mem_allocations_point2)
@@ -361,7 +387,38 @@ def train(args: Arguments):
                'test_f1': test_f1})
     logger.info(f'test_accuracy={test_accuracy:.3f}, '
                 f'test_f1={test_f1:.3f}')
-    return test_f1, all_mem_allocations_point1, all_mem_allocations_point2, all_mem_allocations_point3
+
+    import matplotlib.pyplot as plt
+
+    example_probs = np.array(example_probs)
+    difference = example_probs[1:] - example_probs[:-1]
+    mean_diff = difference.mean(axis=1)
+    mean_std = difference.std(axis=1)
+    plt.plot(mean_diff)
+    plt.fill_between(np.arange(len(mean_diff)), mean_diff - 2 * mean_std, mean_diff + 2 * mean_std, alpha=0.3)
+    plt.xlabel('Epochs')
+    plt.ylabel('Average finite difference')
+    plt.title(args.dataset)
+    plt.savefig(f'{args.dataset}-finite-difference.png')
+
+    plt.clf()
+    epoch_set_similarities = np.array(epoch_set_similarities)
+    mean_similarity = epoch_set_similarities.mean(axis=1)
+    std_similarity = epoch_set_similarities.std(axis=1)
+    plt.plot(mean_similarity, label='Average Jaccard similarity')
+    plt.fill_between(np.arange(len(mean_similarity)),
+                     mean_similarity - std_similarity,
+                     mean_similarity + std_similarity,
+                     alpha=0.3)
+    plt.plot(annealing_values, label='Gumbel noise annealing', marker='.')
+    plt.grid()
+    plt.legend()
+    plt.xlabel('Epochs')
+    # plt.ylabel('Average Jaccard similarity of sampled sets')
+    plt.title(args.dataset)
+    plt.savefig(f'{args.dataset}-sampled-jaccard.png')
+
+    return test_f1, all_mem_allocations_point1, all_mem_allocations_point2, all_mem_allocations_point3, previous_sampled_sets
 
 
 args = Arguments(explicit_bool=True).parse_args()
@@ -377,12 +434,16 @@ mem1 = []
 mem2 = []
 mem3 = []
 for r in range(args.runs):
-    test_f1, mean_mem1, mean_mem2, mean_mem3 = train(args)
+    test_f1, mean_mem1, mean_mem2, mean_mem3, sampled_sets = train(args)
     results[r] = test_f1
     mem1.extend(mean_mem1)
     mem2.extend(mean_mem2)
     mem3.extend(mean_mem3)
-
+    with open(f"{args.dataset}-{r}-sampled-sets.txt", "w") as f:
+        for s in sampled_sets:
+            for node_id in sorted(s):
+                f.write(f"{node_id},")
+            f.write("\n")
 
 print(f'Memory point 1: {np.mean(mem1)} MB ± {np.std(mem1):.2f}')
 print(f'Memory point 2: {np.mean(mem2)} MB ± {np.std(mem2):.2f}')

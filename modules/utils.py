@@ -12,8 +12,10 @@ from torch.distributions import Bernoulli, Gumbel
 
 def sample_neighborhoods_from_probs(logits: torch.Tensor,
                                     neighbor_nodes: torch.Tensor,
-                                    num_samples: int = -1
-    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+                                    epoch: int,
+                                    max_epochs: int,
+                                    num_samples: int = -1,
+    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor], float]:
     """Remove edges from an edge index, by removing nodes according to some
     probability.
 
@@ -26,11 +28,22 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
         num_samples: the number of samples to keep. If None, all edges are kept.
     """
 
+    def transform_x(x, max_value):
+        scaled_x = (x / max_value) * 24
+        mapped_x = scaled_x - 20.0
+        return mapped_x
+
+    def anneal(epoch, max_epochs):
+        transformed_epochs = transform_x(epoch, max_epochs)
+        annealing = np.minimum(np.exp(transformed_epochs), 1.0)
+        return annealing
+
     k = num_samples
     n = neighbor_nodes.shape[0]
+    noise_multiplier = 1.0 - anneal(epoch, max_epochs)
     if k >= n:
         logprobs = torch.nn.functional.logsigmoid(logits.squeeze(-1))
-        return neighbor_nodes, logprobs, {}
+        return neighbor_nodes, logprobs, {}, noise_multiplier
     assert k < n
     assert k > 0
 
@@ -39,7 +52,8 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
     # Gumbel-sort trick https://timvieira.github.io/blog/post/2014/08/01/gumbel-max-trick-and-weighted-reservoir-sampling/
     gumbel = Gumbel(torch.tensor(0., device=logits.device), torch.tensor(1., device=logits.device))
     gumbel_noise = gumbel.sample((n,))
-    perturbed_log_probs = b.probs.log() + gumbel_noise
+
+    perturbed_log_probs = b.probs.log() + noise_multiplier * gumbel_noise
 
     samples = torch.topk(perturbed_log_probs, k=k, dim=0, sorted=False)[1]
 
@@ -68,7 +82,7 @@ def sample_neighborhoods_from_probs(logits: torch.Tensor,
         inf_ind = torch.isinf(b.log_prob(mask))
         b.log_prob(mask)[inf_ind] = -1e-9
 
-    return neighbor_nodes, b.log_prob(mask), stats_dict
+    return neighbor_nodes, b.log_prob(mask), stats_dict, noise_multiplier
 
 
 def get_neighborhoods(nodes: Tensor,
