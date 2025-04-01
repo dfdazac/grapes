@@ -172,7 +172,7 @@ def gen_masks(y: Tensor, train_per_class: int = 20, val_per_class: int = 30,
 
     test_mask = ~(train_mask | val_mask)
 
-    return train_mask, val_mask, test_mask
+    return train_mask[:, 0], val_mask[:, 0], test_mask[:, 0]
 
 
 # Function to return memory usage in MB

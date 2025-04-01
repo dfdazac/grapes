@@ -127,7 +127,7 @@ def get_wikics(root: str) -> Tuple[Data, int, int]:
 
 
 def get_coauthor(root: str, name: str) -> Tuple[Data, int, int]:
-    dataset = Coauthor(f'{root}/Coauthor', name, transform=T.ToSparseTensor())
+    dataset = Coauthor(f'{root}/Coauthor', name, transform=T.ToSparseTensor(remove_edge_index = False))
     data = dataset[0]
     torch.manual_seed(12345)
     data.train_mask, data.val_mask, data.test_mask = gen_masks(
@@ -136,7 +136,7 @@ def get_coauthor(root: str, name: str) -> Tuple[Data, int, int]:
 
 
 def get_amazon(root: str, name: str) -> Tuple[Data, int, int]:
-    dataset = Amazon(f'{root}/Amazon', name, transform=T.ToSparseTensor())
+    dataset = Amazon(f'{root}/Amazon', name, transform=T.ToSparseTensor(remove_edge_index = False))
     data = dataset[0]
     torch.manual_seed(12345)
     data.train_mask, data.val_mask, data.test_mask = gen_masks(
